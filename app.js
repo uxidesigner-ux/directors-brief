@@ -200,7 +200,7 @@
   var lastCount = null;
   function renderList(animate) {
     var f = state.f, list = PROMPTS.filter(function (p) { return hit(p, f); });
-    $('#listTitle').textContent = f.p === 'all' ? '전체 프롬프트' : purposeById[f.p].label;
+    renderHead(animate);
     var cnt = $('#listCount');
     cnt.textContent = list.length + '개';
     if (lastCount !== null && lastCount !== list.length && !reduced) { cnt.classList.remove('is-tick'); void cnt.offsetWidth; cnt.classList.add('is-tick'); }
@@ -217,16 +217,93 @@
     badge.hidden = !n; badge.textContent = n;
     $('#openFilter').setAttribute('aria-label', n ? '필터 ' + n + '개 적용됨' : '필터');
   }
-  function setPurpose(id, jump) {
-    if (state.f.p === id && !jump) return;
+  var headP = null;
+  function renderHead(animate) {
+    var p = state.f.p; if (headP === p) return;
+    var pp = purposeById[p];
+    $('#vTitle').textContent = pp ? pp.label : '전체 프롬프트';
+    $('#vSub').textContent = pp ? pp.ex + '. ' + pp.desc + ' 써요.' : '하려는 일, 유형, 결과물로 걸러서 찾으세요.';
+    if (headP !== null && animate && !reduced && state.view === 'list') { var t = $('#vHeadText'); t.classList.remove('is-swap'); void t.offsetWidth; t.classList.add('is-swap'); }
+    headP = p;
+    if (state.view === 'list') document.title = (pp ? pp.label : '전체 프롬프트') + ' · Director\'s Brief';
+  }
+  function applyPurpose(id) {
     state.f.p = id;
     // 새 목적에 없는 유형은 자동으로 푼다
     state.f.types.forEach(function (t) { if (!PROMPTS.some(function (p) { return (id === 'all' || p.p === id) && p.t === t; })) state.f.types.delete(t); });
     $$('.rail__item', rail).forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.p === id); });
+  }
+  function setPurpose(id, jump) {
+    if (state.f.p === id && !jump) return;
+    applyPurpose(id);
     moveInd(false);
     renderList(true);
+    if (state.view === 'list' && !stack.length) history.replaceState(history.state, '', listHash(id));
     var sentinel = $('#sentinel');
     if (jump || sentinel.getBoundingClientRect().top < 0) window.scrollTo({ top: sentinel.offsetTop + 2, behavior: reduced ? 'auto' : 'smooth' });
+  }
+
+  /* ---------- 화면: 홈(인덱스) ↔ 목록 ----------
+   * 홈의 "하려는 일"과 "전체 100개"는 같은 목록으로 들어가는 다른 입구다.
+   * 주소: #list, #list-brand. 뒤로가기로 홈에 돌아온다. */
+  var VIEWS = { home: $('#vHome'), list: $('#vList') }, scrollMem = { home: 0, list: 0 };
+  state.view = 'home'; state.viewPushed = false;
+  function listHash(p) { return '#list' + (p && p !== 'all' ? '-' + p : ''); }
+  function homeAnchor(p) { return p === 'all' ? $('#openAll .divider__all-label') : $('#goals [data-goal="' + p + '"] .goal__label'); }
+  function onScreen(el) { if (!el) return false; var r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < window.innerHeight && r.width > 0; }
+  function go(view, o) {
+    o = o || {};
+    if (view === state.view) { if (view === 'list' && o.p && o.p !== state.f.p) setPurpose(o.p, true); return; }
+    var from = state.view, dir = view === 'home' ? 'back' : 'fwd', p = view === 'list' ? (o.p || 'all') : state.f.p;
+    if (o.history === 'push') { history.pushState({ view: view }, '', view === 'list' ? listHash(p) : location.pathname + location.search); state.viewPushed = view === 'list'; }
+    else if (o.history === 'replace') history.replaceState({ view: view }, '', view === 'list' ? listHash(p) : location.pathname + location.search);
+    if (view === 'home') state.viewPushed = false;
+    scrollMem[from] = window.scrollY;
+    var animate = !o.instant && !reduced;
+    var useVT = animate && typeof document.startViewTransition === 'function';
+    function swap() {
+      VIEWS[from].hidden = true; VIEWS[view].hidden = false;
+      body.dataset.view = view; state.view = view;
+      if (view === 'list') { applyPurpose(p); renderHead(false); renderList(animate && !useVT); moveInd(true); railEdges(); }
+      else document.title = "Director's Brief: 디자인 디렉팅 프롬프트 100";
+      window.scrollTo(0, view === 'home' ? scrollMem.home : 0);
+    }
+    function settle() {
+      var f = view === 'list' ? $('#vTitle') : homeAnchor(state.f.p);
+      if (f) { if (view === 'home') f = f.closest('button'); f.focus({ preventScroll: true }); }
+    }
+    if (useVT) {
+      // 누른 입구의 이름이 목록 제목 자리로 날아간다 (뒤로 갈 때는 반대로)
+      var root = document.documentElement, src = view === 'list' ? homeAnchor(p) : $('#vTitle');
+      // 맨 위 줄(처음·보관함)은 전환 전후 모두 화면에 있을 때만 제자리에 고정한다
+      var topH = $('.top').offsetHeight, nextY = view === 'home' ? scrollMem.home : 0;
+      root.dataset.dir = dir; root.classList.toggle('vt-on', window.scrollY < topH && nextY < topH);
+      if (!onScreen(src)) src = null;
+      if (src) src.style.viewTransitionName = 'vt-title';
+      var dst = null;
+      var t = document.startViewTransition(function () {
+        if (src) src.style.viewTransitionName = '';
+        swap();
+        dst = view === 'list' ? $('#vTitle') : homeAnchor(p);
+        if (src && onScreen(dst)) dst.style.viewTransitionName = 'vt-title'; else dst = null;
+      });
+      t.finished.finally(function () { if (dst) dst.style.viewTransitionName = ''; delete root.dataset.dir; root.classList.remove('vt-on'); settle(); });
+    } else {
+      swap();
+      if (animate) { var v = VIEWS[view]; v.classList.remove('is-in-fwd', 'is-in-back'); void v.offsetWidth; v.classList.add('is-in-' + dir); setTimeout(function () { v.classList.remove('is-in-' + dir); }, 460); }
+      settle();
+    }
+    haptic();
+  }
+  function goHome() {
+    if (state.view === 'home') { window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' }); return; }
+    if (state.viewPushed) history.back(); else go('home', { history: 'replace' });
+  }
+  function route(instant) {
+    var h = (location.hash || '').replace('#', ''), m = /^list(?:-(\w+))?$/.exec(h);
+    if (m) { go('list', { p: m[1] && purposeById[m[1]] ? m[1] : 'all', instant: instant }); return; }
+    if (!h && state.view !== 'home') go('home', { instant: instant });
+    fromHash();
   }
 
   /* ---------- 토스트 ---------- */
@@ -348,10 +425,11 @@
     hideSheet(el);
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
   }
-  window.addEventListener('popstate', function () {
+  window.addEventListener('popstate', function (e) {
     var top = stack[stack.length - 1];
     if (top && top._pushed) { hideSheet(top); return; }
-    fromHash();
+    // iOS 사파리처럼 브라우저가 이미 스와이프 전환을 보여줬다면 다시 움직이지 않는다
+    route(!!e.hasUAVisualTransition);
   });
   function enableDrag(el) {
     var head = el.querySelector('[data-drag]'), startY = 0, dy = 0, t0 = 0, on = false;
@@ -728,10 +806,13 @@
   $$('[data-close]').forEach(function (b) { b.addEventListener('click', function () { requestClose(b.closest('.drawer, .search')); }); });
   ['drawer', 'courseSheet', 'filterSheet', 'libSheet', 'briefDrawer'].forEach(function (id) { enableDrag($('#' + id)); });
 
-  $('#goals').addEventListener('click', function (e) { var b = e.target.closest('[data-goal]'); if (b) setPurpose(b.dataset.goal, true); });
+  $('#goals').addEventListener('click', function (e) { var b = e.target.closest('[data-goal]'); if (b) go('list', { p: b.dataset.goal, history: 'push' }); });
+  $('#openAll').addEventListener('click', function () { go('list', { p: 'all', history: 'push' }); });
+  $('#back').addEventListener('click', goHome);
+  $('#brand').addEventListener('click', function (e) { e.preventDefault(); goHome(); });
   $('#courses').addEventListener('click', function (e) { var b = e.target.closest('[data-course]'); if (b) openCourse(b.dataset.course, true); });
   rail.addEventListener('click', function (e) { var b = e.target.closest('[data-p]'); if (b) { haptic(); setPurpose(b.dataset.p); } });
-  function railEdges() { var end = rail.scrollLeft + rail.clientWidth >= rail.scrollWidth - 2; rail.classList.toggle('is-end', end); rail.classList.toggle('is-mid', !end && rail.scrollLeft > 2); }
+  function railEdges() { var fit = rail.scrollWidth <= rail.clientWidth + 2, end = rail.scrollLeft + rail.clientWidth >= rail.scrollWidth - 2; rail.classList.toggle('is-fit', fit); rail.classList.toggle('is-end', end); rail.classList.toggle('is-mid', !end && rail.scrollLeft > 2); }
   rail.addEventListener('scroll', railEdges, { passive: true });
   $('#tokens').addEventListener('click', function (e) {
     var b = e.target.closest('[data-untoken]'); if (!b) return;
@@ -909,7 +990,7 @@
     }).observe($('#sentinel'));
   }
   var rTimer;
-  window.addEventListener('resize', function () { clearTimeout(rTimer); rTimer = setTimeout(function () { renderRuler(); moveInd(true); }, 150); });
+  window.addEventListener('resize', function () { clearTimeout(rTimer); rTimer = setTimeout(function () { renderRuler(); moveInd(true); railEdges(); }, 150); });
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { moveInd(true); });
 
   /* ---------- 시작 ---------- */
@@ -920,8 +1001,13 @@
   }
   renderGoals(); renderCourses(); renderRail(); renderList(false);
   renderBriefBar(); renderLibCount(); renderPrinciples(); renderRuler();
-  fromHash();
-  window.addEventListener('load', function () { body.classList.remove('is-loading'); moveInd(true); });
+  if (/^#list/.test(location.hash)) { body.classList.remove('is-intro'); route(true); history.replaceState({ view: 'list' }, '', location.href); }
+  else fromHash();
+  window.addEventListener('load', function () {
+    body.classList.remove('is-loading'); moveInd(true);
+    // 첫 등장 애니메이션은 한 번만: 홈으로 돌아올 때 다시 재생되지 않게
+    setTimeout(function () { body.classList.remove('is-intro'); }, 1400);
+  });
 
-  window.DirectorsBrief = { compose: function (id) { return plain(compose(byId[id])); }, search: function (q) { return searchPrompts(q).map(function (r) { return r.p.id; }); }, state: state };
+  window.DirectorsBrief = { compose: function (id) { return plain(compose(byId[id])); }, search: function (q) { return searchPrompts(q).map(function (r) { return r.p.id; }); }, state: state, go: go };
 })();
