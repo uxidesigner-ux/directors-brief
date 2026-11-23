@@ -1,0 +1,17 @@
+{
+  "name": "Director's Brief: 디자인 디렉팅 프롬프트 100",
+  "short_name": "Brief",
+  "description": "디렉터처럼 지시하면 AI가 디자이너처럼 일해요.",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#2C5B4C",
+  "theme_color": "#234A3E",
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "assets/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
