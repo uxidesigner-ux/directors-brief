@@ -94,7 +94,16 @@
   }
   function compose(p) {
     var L = ['당신은 ' + p.role + '입니다.', '', '## 프로젝트 맥락'];
-    p.ctx.forEach(function (k) { L.push('- ' + ctxByKey[k].label + ': ' + mark(resolve(k, p))); });
+    // 브랜드 코어는 선택 칸: 있으면 바꾸지 않고 이어 쓰고, 비어 있으면 전략 프롬프트만 이 과제에서 정한다
+    var hasCore = p.ctx.indexOf('core') > -1, coreSet = hasCore && val(state.brief.core), coreMaker = hasCore && !coreSet && p.t === 'strategy';
+    p.ctx.forEach(function (k) {
+      if (k === 'core') {
+        if (coreSet) L.push('- 브랜드 코어: ' + mark(resolve(k, p)) + ' (이미 정한 결정입니다. 바꾸지 말고 이어서 쓰되, 코어의 수치를 다시 나열하지 말고 "코어 기준"이라고만 적으세요)');
+        else if (coreMaker) L.push('- 브랜드 코어: 아직 정하지 않음. 이 과제의 결론으로 정하세요');
+        return;
+      }
+      L.push('- ' + ctxByKey[k].label + ': ' + mark(resolve(k, p)));
+    });
     L.push('', '## 과제', fill(p.task, p), '', '## 진행 방식');
     var n = 0;
     p.steps.forEach(function (s) { L.push((++n) + '. ' + fill(s, p)); });
@@ -105,15 +114,21 @@
     }
     L.push('', '## 산출물');
     p.output.forEach(function (o) { L.push('- ' + fill(o, p)); });
+    if (coreMaker) L.push('- 맨 끝에 "브랜드 코어" 4줄: 핵심 개념 / 확정한 태그라인 1개 / 시각 모티프 1개와 쓰는 법 / 확정한 기준(색 역할과 값, 서체, 글자 크기, 알림 간격 등). 다음 프롬프트의 브리프에 그대로 붙여 넣을 수 있게 쓰세요.');
     if (state.principles) {
       L.push('', '## 디렉팅 원칙');
       DB.principles.forEach(function (x) { if (x.when(p)) L.push('- ' + x.line); });
       if (p.out === 'image') L.push('- ' + DB.imageRule);
     }
-    L.push('', '## 출력 전 자기 검수', '아래 기준으로 결과물을 스스로 점검하고, 통과하지 못한 항목은 고친 뒤 출력하세요.');
+    L.push('', '## 출력 전 자기 검수', '아래 기준으로 결과물을 스스로 점검하고, 통과하지 못한 부분은 고친 결과만 출력하세요. 검수 결과표는 따로 쓰지 마세요.');
     p.checks.forEach(function (c) { L.push('- ' + fill(c, p)); });
+    if (coreSet) L.push('- 브랜드 코어(핵심 개념·태그라인·모티프·수치)와 어긋나는 결정이 없는가. 바꿔야 한다면(예: 사용자가 이미 알아보는 기존 자산과 부딪힐 때) 본문과 섞지 말고 이유와 함께 따로 제안할 것');
     if (DB.scoreWhen(p)) L.push(DB.scoreLine);
-    L.push('정보가 부족하면 멈추지 말고 합리적으로 가정하되, 가정한 부분은 [가정]으로 표시하세요. 답변은 한국어로, 제목과 표를 써서 구조화하세요.');
+    L.push('', '## 사실과 가정');
+    L.push('- 프로젝트 맥락에 적힌 사실(수익 모델, 현재 상태, 숫자)은 바꾸거나 다른 가정으로 대신하지 마세요.');
+    L.push('- 정보가 부족하면 멈추지 말고 가정하되, 맨 앞에 3개 이내로 모아 적고 본문에서는 [가정]으로 표시하세요.');
+    L.push('- 측정하지 않은 효과("3초 안에 이해된다")는 사실이 아니라 목표로 쓰세요. "유일하다"는 비교한 범위 안에서만 주장하세요.');
+    L.push('답변은 한국어로, 제목과 표를 써서 구조화하세요.');
     return L.join('\n');
   }
   var RE_P = new RegExp(M0 + 'P([\\s\\S]*?)' + M1, 'g'), RE_V = new RegExp(M0 + 'V([\\s\\S]*?)' + M1, 'g');
@@ -705,11 +720,11 @@
     }
   }
   function renderBriefRow(p) {
-    var used = p.ctx, filled = used.filter(function (k) { return val(state.brief[k]); }), all = filled.length === used.length;
+    var used = p.ctx.filter(function (k) { return !ctxByKey[k].optional; }), filled = used.filter(function (k) { return val(state.brief[k]); }), all = filled.length === used.length;
     $('#dBrief').innerHTML = '<p class="brief-row__text"><b>' + (all ? '브리프 정보가 모두 들어가요' : '브리프 ' + used.length + '칸 중 ' + filled.length + '칸이 채워져 있어요') + '</b>' +
       (all ? '내 브리프에서 ' + used.length + '칸을 가져왔어요.' : '비어 있는 칸은 [ ]로 남아요.') + '</p>' +
       '<button class="btn btn--ink brief-row__btn" type="button" id="dEditBrief">' + (all ? '고치기' : '채우기') + '</button>';
-    $('#dCtxList').innerHTML = used.map(function (k) {
+    $('#dCtxList').innerHTML = p.ctx.map(function (k) {
       var v = val(state.brief[k]);
       return '<span class="ctx' + (v ? ' ctx--full' : '') + '" title="' + esc(v || '비어 있음') + '">' + (v ? I.tick : '') + esc(ctxByKey[k].label) + '</span>';
     }).join('');
@@ -743,16 +758,16 @@
 
   /* ---------- 내 브리프 ---------- */
   function renderBriefBar() {
-    var filled = DB.ctx.filter(function (c) { return val(state.brief[c.k]); }).length, total = DB.ctx.length;
+    var req = DB.ctx.filter(function (c) { return !c.optional; }), filled = req.filter(function (c) { return val(state.brief[c.k]); }).length, total = req.length;
     $('#briefRing').style.strokeDashoffset = (100.5 * (1 - filled / total)).toFixed(1);
     $('#briefStatus').textContent = filled === total ? '모든 프롬프트에 내 정보가 들어가요' : total + '칸 중 ' + filled + '칸 채움';
     $('#briefGo').textContent = filled === total ? '고치기' : (filled ? '이어서' : '채우기');
   }
   function openBrief(startKey) {
-    var filled = DB.ctx.filter(function (c) { return val(state.brief[c.k]); }).length;
+    var req = DB.ctx.filter(function (c) { return !c.optional; }), empty = req.filter(function (c) { return !val(state.brief[c.k]); });
     if (startKey && ctxByKey[startKey]) showStep(ctxByKey[startKey].i);
-    else if (!filled) showStep(0);
-    else if (filled < DB.ctx.length) showStep(DB.ctx.filter(function (c) { return !val(state.brief[c.k]); })[0].i);
+    else if (empty.length === req.length) showStep(0);
+    else if (empty.length) showStep(empty[0].i);
     else showSum();
     showSheet($('#briefDrawer'), true);
   }
