@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var DB = window.DB, PROMPTS = window.PROMPTS, COURSES = window.COURSES || [];
+  var DB = window.DB, PROMPTS = window.PROMPTS, COURSES = window.COURSES || [], EX = window.EXAMPLES || {};
   var M0 = '', M1 = '';
   var body = document.body;
 
@@ -128,14 +128,16 @@
   /* ---------- 공통 조각 ---------- */
   function copyBtn(id, label) { return '<button class="copy-ic" type="button" data-copy="' + id + '" aria-label="' + (label || id + ' 프롬프트 복사') + '">' + I.copy + I.check + '</button>'; }
   function markBtn(id) { return '<button class="mark-ic" type="button" data-mark="' + id + '" aria-pressed="' + state.fav.has(id) + '" aria-label="' + id + ' 보관함에 담기">' + I.mark + '</button>'; }
-  function rowHTML(id, i, q) {
-    var p = byId[id], title = esc(p.title);
-    if (q) {
-      var low = p.title.toLowerCase(), at = low.indexOf(q.toLowerCase());
-      if (at > -1) title = esc(p.title.slice(0, at)) + '<mark>' + esc(p.title.slice(at, at + q.length)) + '</mark>' + esc(p.title.slice(at + q.length));
-    }
+  function hlText(text, terms) {
+    var low = text.toLowerCase(), best = null;
+    (terms || []).forEach(function (t) { var at = low.indexOf(t); if (at > -1 && (!best || t.length > best.t.length)) best = { at: at, t: t }; });
+    if (!best) return esc(text);
+    return esc(text.slice(0, best.at)) + '<mark>' + esc(text.slice(best.at, best.at + best.t.length)) + '</mark>' + esc(text.slice(best.at + best.t.length));
+  }
+  function rowHTML(id, i, hit) {
+    var p = byId[id], title = hit ? hlText(p.title, hit.terms) : esc(p.title);
     return '<li class="row is-in" style="--i:' + Math.min(i, 12) + '"><button class="row__open" type="button" data-open="' + id + '"><span class="row__title">' + title + '</span>' +
-      '<span class="row__meta"><b>' + id + '</b> ' + esc(DB.types[p.t]) + '</span></button>' + copyBtn(id) + '</li>';
+      '<span class="row__meta"><b>' + id + '</b> ' + esc(DB.types[p.t]) + '</span>' + (hit && hit.ctx ? '<span class="row__ctx">' + hit.ctx + '</span>' : '') + '</button>' + copyBtn(id) + '</li>';
   }
   function getsText(p) { return plain(fill(p.output[0], p)); }
 
@@ -401,12 +403,107 @@
       $('#sIdle').innerHTML = out;
       return;
     }
-    var ws = q.toLowerCase().split(/\s+/).filter(Boolean);
-    var res = PROMPTS.filter(function (p) { return ws.every(function (w) { return p._hay.indexOf(w) > -1; }); });
-    // 제목에 맞는 것을 위로
-    res.sort(function (a, b) { return (b.title.toLowerCase().indexOf(ws[0]) > -1) - (a.title.toLowerCase().indexOf(ws[0]) > -1); });
-    $('#sCount').textContent = res.length ? '"' + q + '" 결과 ' + res.length + '개' : '"' + q + '"에 맞는 프롬프트가 없어요. 다른 말로 찾아보세요.';
-    $('#sList').innerHTML = res.map(function (p, i) { return rowHTML(p.id, i, ws[0]); }).join('');
+    var res = searchPrompts(q);
+    $('#sCount').textContent = res.length ? '"' + q + '" 결과 ' + res.length + '개' : '"' + q + '"에 맞는 프롬프트가 없어요. 아래 말로 찾아보세요.';
+    $('#sList').innerHTML = res.length
+      ? res.map(function (r, i) { return rowHTML(r.p.id, i, r); }).join('')
+      : '<li class="search__chips search__chips--empty">' + SUGGEST.map(function (s) { return '<button class="schip" type="button" data-q="' + esc(s) + '">' + esc(s) + '</button>'; }).join('') + '</li>';
+  }
+
+  /* ---------- 검색 점수: 번호 > 제목 > 유형 > 하려는 일 > 과제 > 받는 것 ---------- */
+  var ALIAS = {
+    '피치': ['피치덱', '투자'], '투자': ['피치덱', '투자'], 'ir': ['피치덱', '투자'], 'ppt': ['슬라이드', '발표'], '발표자료': ['슬라이드', '발표'], '프레젠테이션': ['슬라이드', '발표'], '덱': ['피치덱', '슬라이드'],
+    '홈페이지': ['랜딩페이지', '웹페이지', '히어로'], '웹사이트': ['랜딩페이지', '웹페이지', '히어로'], '사이트': ['랜딩페이지', '웹페이지'], '상페': ['상세페이지'], '상세': ['상세페이지'],
+    '인스타': ['sns', '카드뉴스'], '인스타그램': ['sns', '카드뉴스'], '유튜브': ['썸네일', '숏폼'], '릴스': ['숏폼'], '쇼츠': ['숏폼'], '영상': ['숏폼', '스토리보드'],
+    '색': ['컬러'], '색상': ['컬러'], '컬러': ['컬러'], '폰트': ['타이포'], '글꼴': ['타이포'], '글씨체': ['타이포'], '서체': ['타이포'],
+    '이름': ['네이밍'], '브랜드명': ['네이밍'], '작명': ['네이밍'], '로딩': ['상태', '로딩'], '에러': ['오류', '상태'], '빈화면': ['빈 화면', '상태'],
+    '다크': ['다크 모드'], '문구': ['라이팅', '카피', '문구'], '카피': ['카피', '라이팅'], '메일': ['이메일'], '뉴스레터': ['뉴스레터', '이메일'],
+    '그래프': ['차트'], '보고서': ['보고'], '검수': ['점검', '감사', '리뷰'], '감사': ['감사', '점검'], '리뷰': ['리뷰', '크리틱', '점검'],
+    '캐릭터': ['마스코트'], '결제': ['결제', '페이월', '가격'], '가격': ['가격', '요금제'], '요금': ['요금제', '가격'], '구독': ['페이월', '요금제', '구독'],
+    '전단': ['홍보물', '전단'], '메뉴판': ['홍보물'], '앱': ['앱'], '화면': ['화면'], '설문': ['사용자 테스트'], '테스트': ['테스트', '사용자 테스트'],
+    '출시': ['출시', '런칭'], '런칭': ['출시'], '주식': ['트레이딩', '투자'], '코인': ['트레이딩'], '여행': ['여행']
+  };
+  var CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+  function initials(s) {
+    return String(s).split('').map(function (ch) {
+      var c = ch.charCodeAt(0);
+      return c >= 0xAC00 && c <= 0xD7A3 ? CHO.charAt(Math.floor((c - 0xAC00) / 588)) : ch.toLowerCase();
+    }).join('').replace(/\s+/g, '');
+  }
+  PROMPTS.forEach(function (p) {
+    p._f = {
+      title: p.title.toLowerCase(), type: DB.types[p.t].toLowerCase(),
+      purpose: (purposeById[p.p].label + ' ' + purposeById[p.p].ex).toLowerCase(),
+      task: p.task.replace(/\{\w+\}/g, '').toLowerCase(), role: p.role.toLowerCase(),
+      out: p.output.join(' / ').toLowerCase(), cho: initials(p.title)
+    };
+  });
+  var W = { title: 100, type: 60, purpose: 40, task: 20, role: 10, out: 8 };
+  var HANGUL = /[가-힣]/;
+  // 한 글자 검색어는 단어 첫머리에서만, "랜딩"은 "브랜딩" 속에서는 맞지 않게
+  function findTerm(text, t) {
+    var from = 0, at;
+    while ((at = text.indexOf(t, from)) > -1) {
+      var prev = text.charAt(at - 1);
+      var bad = (t.length === 1 && HANGUL.test(t) && HANGUL.test(prev)) || (t === '랜딩' && prev === '브');
+      if (!bad) return at;
+      from = at + 1;
+    }
+    return -1;
+  }
+  function wordInitials(s) { return String(s).split(/[\s:·,()"'\/]+/).filter(Boolean).map(initials); }
+  function choMatch(s, cq) {
+    var ws = wordInitials(s);
+    for (var i = 0; i < ws.length; i++) { if (ws.slice(i).join('').indexOf(cq) === 0) return i === 0 ? 2 : 1; }
+    return 0;
+  }
+  function snippet(text, term) {
+    var low = text.toLowerCase(), at = low.indexOf(term); if (at < 0) return esc(text.slice(0, 40));
+    var s = Math.max(0, at - 14), e = Math.min(text.length, at + term.length + 22);
+    return (s > 0 ? '…' : '') + esc(text.slice(s, at)) + '<mark>' + esc(text.slice(at, at + term.length)) + '</mark>' + esc(text.slice(at + term.length, e)) + (e < text.length ? '…' : '');
+  }
+  function searchPrompts(q) {
+    var raw = val(q).toLowerCase();
+    if (!raw) return [];
+    // 초성만 입력했을 때 (예: ㄹㄱ → 로고)
+    if (/^[ㄱ-ㅎ\s]+$/.test(raw)) {
+      var cq = raw.replace(/\s+/g, '');
+      return PROMPTS.map(function (p) {
+        var m = choMatch(p.title, cq), mt = choMatch(DB.types[p.t], cq);
+        return { p: p, score: m ? (m === 2 ? 120 : 100) : (mt ? 60 : 0), terms: [], ctx: !m && mt ? '유형: ' + esc(DB.types[p.t]) : '' };
+      }).filter(function (r) { return r.score; }).sort(function (a, b) { return b.score - a.score || a.p.id.localeCompare(b.p.id); });
+    }
+    var words = raw.split(/\s+/).filter(Boolean), out = [];
+    PROMPTS.forEach(function (p) {
+      if (words.length === 1 && /^\d{1,3}$/.test(words[0]) && p.id === words[0].padStart(3, '0')) { out.push({ p: p, score: 1000, terms: [], ctx: '' }); return; }
+      var total = 0, terms = [], where = null, ok = words.every(function (w) {
+        var cands = [w].concat(ALIAS[w] || []), best = 0, bestF = null, bestT = null, perField = {};
+        cands.forEach(function (t, ci) {
+          var m = ci === 0 ? 1 : (w.length === 1 ? 1 : 0.8);
+          Object.keys(W).forEach(function (f) {
+            var at = findTerm(p._f[f], t); if (at < 0) return;
+            var sc = W[f] * m + (f === 'title' && at === 0 && t.length > 1 ? 20 : 0);
+            perField[f] = Math.max(perField[f] || 0, sc);
+            if (sc > best) { best = sc; bestF = f; bestT = t; }
+          });
+        });
+        if (!best) return false;
+        // 가장 잘 맞는 곳 + 다른 곳에서도 맞으면 조금 더
+        var rest = Object.keys(perField).reduce(function (s, f) { return s + perField[f]; }, 0) - best;
+        total += best + rest * 0.25; terms.push(bestT);
+        if (!where || W[bestF] > W[where.f]) where = { f: bestF, t: bestT };
+        return true;
+      });
+      if (!ok) return;
+      var ctx = '';
+      if (where && where.f !== 'title') {
+        var label = { type: '유형', purpose: '하려는 일', task: '과제', role: '역할', out: '받는 것' }[where.f];
+        var src = { type: DB.types[p.t], purpose: purposeById[p.p].label + ' (' + purposeById[p.p].ex + ')', task: plain(fill(p.task, p)), role: p.role, out: p.output.map(function (o) { return plain(fill(o, p)); }).join(' / ') }[where.f];
+        ctx = label + ': ' + snippet(src, where.t);
+      }
+      out.push({ p: p, score: total, terms: terms, ctx: ctx });
+    });
+    return out.sort(function (a, b) { return b.score - a.score || a.p.id.localeCompare(b.p.id); });
   }
 
   /* ---------- 필터 시트 ---------- */
@@ -441,6 +538,7 @@
   /* ---------- 보관함 ---------- */
   function renderLib() {
     $$('[data-lib]').forEach(function (b) { b.setAttribute('aria-selected', b.dataset.lib === state.lib); });
+    roving();
     var ids = state.lib === 'fav' ? Array.from(state.fav).reverse() : state.recent.slice();
     ids = ids.filter(function (id) { return byId[id]; });
     $('#lList').innerHTML = ids.map(function (id, i) { return rowHTML(id, i); }).join('');
@@ -507,6 +605,7 @@
     $('#dPrinciples').checked = state.principles; $('#bPrinciples').checked = state.principles;
     var p = byId[state.openId];
     if (p) $('#dDiscSum').textContent = (p.x ? MODE_LABEL[state.mode] + ', ' : '') + (state.principles ? '디렉팅 원칙 넣음' : '디렉팅 원칙 뺌');
+    roving();
   }
   function renderPreview() {
     var p = byId[state.openId]; if (!p) return;
@@ -545,8 +644,10 @@
       $('#dGets').innerHTML = p.output.map(function (o) { return '<li>' + I.get + '<span>' + esc(plain(fill(o, p))) + '</span></li>'; }).join('');
       var saved = state.inputs[p.id] || {};
       $('#dInputs').innerHTML = (p.in || []).map(function (i) {
-        var fid = 'in-' + p.id + '-' + i.k;
-        return '<div class="field"><label class="field__label" for="' + fid + '">' + esc(i.l) + '</label><textarea class="field__input" id="' + fid + '" data-k="' + i.k + '" rows="2" placeholder="비워 두면 빈칸으로 남아요">' + esc(saved[i.k] || '') + '</textarea></div>';
+        var fid = 'in-' + p.id + '-' + i.k, ex = EX[p.id + '.' + i.k] || '', v = saved[i.k] || '';
+        return '<div class="field"><div class="field__head"><label class="field__label" for="' + fid + '">' + esc(i.l) + '</label>' +
+          (ex ? '<button class="field__ex" type="button" data-ex="' + i.k + '"' + (val(v) ? ' hidden' : '') + '>예시 넣기</button>' : '') + '</div>' +
+          '<textarea class="field__input" id="' + fid + '" data-k="' + i.k + '" rows="2" placeholder="' + esc(ex ? '예: ' + ex : '비워 두면 빈칸으로 남아요') + '">' + esc(v) + '</textarea></div>';
       }).join('');
       $('#dModeWrap').hidden = !p.x;
       var next = p.next || [];
@@ -729,6 +830,16 @@
     var k = e.target.dataset.k; if (!k) return;
     var id = state.openId; state.inputs[id] = state.inputs[id] || {}; state.inputs[id][k] = e.target.value;
     store.set('inputs', state.inputs); renderPreview();
+    var exb = $('#dInputs [data-ex="' + k + '"]'); if (exb) exb.hidden = !!val(e.target.value);
+  });
+  $('#dInputs').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-ex]'); if (!b) return;
+    var k = b.dataset.ex, id = state.openId, t = $('#in-' + id + '-' + k), ex = EX[id + '.' + k];
+    if (!t || !ex) return;
+    t.value = ex; t.classList.remove('is-filled-anim'); void t.offsetWidth; t.classList.add('is-filled-anim');
+    state.inputs[id] = state.inputs[id] || {}; state.inputs[id][k] = ex; store.set('inputs', state.inputs);
+    b.hidden = true; renderPreview(); haptic();
+    toast('예시를 넣었어요', '내 상황에 맞게 고쳐서 쓰세요.');
   });
   $('#dBody').addEventListener('click', function (e) {
     if (!e.target.closest('#dEditBrief')) return;
@@ -755,6 +866,23 @@
   ['#dPrinciples', '#bPrinciples'].forEach(function (s) {
     $(s).addEventListener('change', function () { state.principles = this.checked; store.set('principles', state.principles); syncOpts(); renderPreview(); });
   });
+
+  // 키보드: 세그먼트와 탭은 좌우 방향키로 이동
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    var b = e.target.closest('[role="radio"], [role="tab"]'); if (!b) return;
+    var group = b.parentElement, items = $$('[role="radio"], [role="tab"]', group), i = items.indexOf(b);
+    var n = items[(i + (e.key === 'ArrowRight' ? 1 : -1) + items.length) % items.length];
+    e.preventDefault(); n.focus(); n.click();
+  });
+  function roving() {
+    $$('.seg').forEach(function (g) {
+      $$('[role="radio"], [role="tab"]', g).forEach(function (x) {
+        var on = x.getAttribute('aria-checked') === 'true' || x.getAttribute('aria-selected') === 'true';
+        x.tabIndex = on ? 0 : -1;
+      });
+    });
+  }
 
   // 키보드
   document.addEventListener('keydown', function (e) {
@@ -795,5 +923,5 @@
   fromHash();
   window.addEventListener('load', function () { body.classList.remove('is-loading'); moveInd(true); });
 
-  window.DirectorsBrief = { compose: function (id) { return plain(compose(byId[id])); }, state: state };
+  window.DirectorsBrief = { compose: function (id) { return plain(compose(byId[id])); }, search: function (q) { return searchPrompts(q).map(function (r) { return r.p.id; }); }, state: state };
 })();
