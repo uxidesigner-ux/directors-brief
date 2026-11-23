@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Director's Brief: 디자인 디렉팅 프롬프트 100</title>
+  <meta name="description" content="디렉터처럼 지시하면 AI가 디자이너처럼 일합니다. 목적 6가지, 디자인 유형 22가지로 나눈 실무형 디자인 프롬프트 100개.">
+  <meta property="og:title" content="Director's Brief: 디자인 디렉팅 프롬프트 100">
+  <meta property="og:description" content="브리프를 한 번 채우면 100개 프롬프트의 빈칸이 내 서비스 정보로 바뀝니다. 눌러서 복사하고 AI에 붙여넣으세요.">
+  <meta property="og:type" content="website">
+  <meta name="theme-color" content="#234A3E">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#list">프롬프트 목록으로 건너뛰기</a>
+
+  <header class="masthead">
+    <div class="wrap masthead__row">
+      <a class="brand" href="./" aria-label="Director's Brief 처음으로">
+        <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M3 9V3h6M23 3h6v6M29 23v6h-6M9 29H3v-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="square"/>
+          <circle cx="16" cy="16" r="5.5" fill="#CF3A2E"/>
+        </svg>
+        <span class="brand__name">Director's Brief</span>
+      </a>
+      <div class="tally" aria-live="polite">
+        <span class="tally__item">복사 <b id="copyCount">0</b>/100</span>
+        <span class="tally__item"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5l2.3 4.8 5.2.7-3.8 3.6.9 5.2L10 14.3l-4.6 2.5.9-5.2-3.8-3.6 5.2-.7z" fill="currentColor"/></svg><span class="sr">즐겨찾기</span> <b id="favCount">0</b></span>
+      </div>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="wrap">
+      <div class="ruler" id="ruler" aria-hidden="true"></div>
+      <div class="hero__grid">
+        <div class="hero__copy">
+          <h1 class="hero__title">디렉터처럼 지시하면,<br>AI는 디자이너처럼 일합니다.</h1>
+          <p class="hero__lede">브랜드, 랜딩페이지, 앱 화면, 피치덱까지. 실무 디렉터가 쓰는 기준을 그대로 담은 디자인 프롬프트 100개입니다. 열어서 복사하고 Claude나 쓰는 AI에 붙여넣으세요.</p>
+        </div>
+        <aside class="brief-card" aria-labelledby="briefCardTitle">
+          <span class="tape" aria-hidden="true"></span>
+          <h2 class="brief-card__title" id="briefCardTitle">내 브리프</h2>
+          <p class="brief-card__text" id="briefCardText">아직 비어 있습니다. 채우지 않아도 쓸 수 있고, 비어 있는 칸은 <mark class="ph">[ ]</mark>로 복사됩니다.</p>
+          <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="8" aria-valuenow="0" aria-label="브리프 채움 정도" id="briefMeter"><span id="briefMeterBar"></span></div>
+          <p class="brief-card__status" id="briefStatus">8칸 중 0칸 채움</p>
+          <button class="btn btn--ink btn--block" type="button" id="openBrief">브리프 채우기</button>
+        </aside>
+      </div>
+      <ol class="steps">
+        <li><b>브리프를 채웁니다.</b> 서비스 정보를 한 번만 적으면 모든 프롬프트의 빈칸이 채워집니다.</li>
+        <li><b>목적과 유형으로 고릅니다.</b> 브랜드 구축부터 검수까지 6가지 목적, 22가지 유형으로 나눴습니다.</li>
+        <li><b>복사해서 붙여넣습니다.</b> 결과가 나오면 같은 대화에 "다음 단계" 프롬프트를 이어 붙여 다듬습니다.</li>
+      </ol>
+    </div>
+  </section>
+
+  <div class="toolbar" id="toolbar">
+    <div class="wrap">
+      <label class="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <span class="sr">프롬프트 검색</span>
+        <input id="q" type="search" inputmode="search" autocomplete="off" placeholder="찾기: 로고, 상세페이지, 대시보드, 042">
+        <button class="search__clear" type="button" id="qClear" aria-label="검색어 지우기" hidden>
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </label>
+      <div class="tabs" id="tabs" role="group" aria-label="목적별 보기"></div>
+    </div>
+  </div>
+
+  <main id="list" class="list">
+    <div class="wrap">
+      <div class="filters">
+        <div class="chips" id="chips" role="group" aria-label="디자인 유형별 보기"></div>
+        <p class="filters__desc" id="filterDesc"></p>
+      </div>
+      <div class="grid" id="grid"></div>
+      <div class="empty" id="empty" hidden>
+        <p class="empty__title">조건에 맞는 프롬프트가 없습니다.</p>
+        <p class="empty__text" id="emptyText">검색어를 줄이거나 유형을 "전체"로 바꿔 보세요.</p>
+        <button class="btn btn--paper" type="button" id="resetFilters">필터 초기화</button>
+      </div>
+    </div>
+  </main>
+
+  <section class="principles" id="principles" aria-labelledby="principlesTitle">
+    <div class="wrap">
+      <div class="principles__sheet">
+        <h2 class="principles__title" id="principlesTitle">모든 프롬프트에 들어가는 디렉팅 원칙</h2>
+        <p class="principles__lede">20년 실무에서 결과물을 판단해 온 기준을 AI가 따를 수 있는 문장으로 옮겼습니다. 프롬프트마다 필요한 원칙만 골라 들어가고, 상세 화면에서 끌 수도 있습니다.</p>
+        <ol class="principles__list" id="principleList"></ol>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <div class="wrap foot__row">
+      <p>프롬프트는 자유롭게 복사해 쓰세요. 결과물에 나온 사실, 수치, 법규는 꼭 직접 확인하세요.</p>
+      <a class="foot__link" href="https://github.com/uxidesigner-ux/directors-brief">GitHub에서 보기</a>
+    </div>
+  </footer>
+
+  <!-- 프롬프트 상세 -->
+  <div class="scrim" id="scrim" hidden></div>
+  <section class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="dTitle" hidden>
+    <header class="drawer__head">
+      <div class="drawer__meta" id="dMeta"></div>
+      <button class="icon-btn" type="button" data-close aria-label="닫기">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </header>
+    <div class="drawer__body" id="dBody">
+      <h2 class="drawer__title" id="dTitle"></h2>
+      <p class="drawer__role" id="dRole"></p>
+
+      <section class="block">
+        <h3 class="block__title">이 프롬프트에 들어갈 정보</h3>
+        <div class="ctx-list" id="dCtx"></div>
+        <div class="fields" id="dInputs"></div>
+      </section>
+
+      <section class="block block--opts">
+        <div class="opt" id="dModeWrap">
+          <span class="opt__label" id="dModeLabel">진행 방식</span>
+          <div class="seg" role="radiogroup" aria-labelledby="dModeLabel">
+            <button type="button" role="radio" data-mode="explore">3안 먼저 보기</button>
+            <button type="button" role="radio" data-mode="direct">바로 완성하기</button>
+          </div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="dPrinciples">
+          <span class="switch__track" aria-hidden="true"></span>
+          <span>디렉팅 원칙 넣기</span>
+        </label>
+      </section>
+
+      <section class="block">
+        <h3 class="block__title">복사될 프롬프트</h3>
+        <pre class="prompt" id="dPrompt"></pre>
+      </section>
+
+      <section class="block" id="dNextWrap">
+        <h3 class="block__title">다음 단계 프롬프트</h3>
+        <p class="block__hint">첫 결과가 나온 같은 대화에 이어서 붙여넣으세요.</p>
+        <div id="dNext"></div>
+      </section>
+    </div>
+    <footer class="drawer__foot">
+      <button class="btn btn--star" type="button" id="dFav" aria-pressed="false">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5l2.3 4.8 5.2.7-3.8 3.6.9 5.2L10 14.3l-4.6 2.5.9-5.2-3.8-3.6 5.2-.7z"/></svg>
+        <span>즐겨찾기</span>
+      </button>
+      <button class="btn btn--ink btn--grow" type="button" id="dCopy">프롬프트 복사</button>
+    </footer>
+  </section>
+
+  <!-- 내 브리프 -->
+  <section class="drawer" id="briefDrawer" role="dialog" aria-modal="true" aria-labelledby="bTitle" hidden>
+    <header class="drawer__head">
+      <h2 class="drawer__head-title" id="bTitle">내 브리프</h2>
+      <button class="icon-btn" type="button" data-close aria-label="닫기">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </header>
+    <div class="drawer__body">
+      <p class="block__hint">여기 적은 내용이 100개 프롬프트의 빈칸에 들어갑니다. 이 기기의 브라우저에만 저장되고 어디에도 전송되지 않습니다.</p>
+      <form class="fields" id="briefForm" autocomplete="off"></form>
+      <section class="block block--opts">
+        <div class="opt">
+          <span class="opt__label" id="bModeLabel">진행 방식 기본값</span>
+          <div class="seg" role="radiogroup" aria-labelledby="bModeLabel">
+            <button type="button" role="radio" data-mode="explore">3안 먼저 보기</button>
+            <button type="button" role="radio" data-mode="direct">바로 완성하기</button>
+          </div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="bPrinciples">
+          <span class="switch__track" aria-hidden="true"></span>
+          <span>디렉팅 원칙 넣기</span>
+        </label>
+      </section>
+    </div>
+    <footer class="drawer__foot">
+      <button class="btn btn--paper" type="button" id="briefClear">모두 지우기</button>
+      <button class="btn btn--ink btn--grow" type="button" data-close>저장하고 닫기</button>
+    </footer>
+  </section>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="data/core.js"></script>
+  <script src="data/p1-brand.js"></script>
+  <script src="data/p2-convert.js"></script>
+  <script src="data/p3-product.js"></script>
+  <script src="data/p4-content.js"></script>
+  <script src="data/p5-persuade.js"></script>
+  <script src="data/p6-review.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
