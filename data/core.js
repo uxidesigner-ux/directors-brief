@@ -4,25 +4,26 @@
  */
 window.DB = {
   purposes: [
-    { id: 'brand',    label: '브랜드 구축',  desc: '포지셔닝, 이름, 로고, 컬러처럼 브랜드의 뼈대를 세울 때' },
-    { id: 'convert',  label: '전환·매출',    desc: '랜딩, 상세페이지, 광고처럼 방문자를 고객으로 바꿀 때' },
-    { id: 'product',  label: '제품 UX·UI',   desc: '앱·웹 화면, 흐름, 디자인 시스템을 설계할 때' },
-    { id: 'content',  label: '콘텐츠·소셜',  desc: '썸네일, 카드뉴스, 일러스트처럼 매주 만드는 콘텐츠' },
-    { id: 'persuade', label: '설득·보고',    desc: '피치덱, 보고서, 데이터 시각화로 결정을 끌어낼 때' },
-    { id: 'review',   label: '검수·고도화',  desc: '이미 만든 결과물을 디렉터 눈으로 점검하고 끌어올릴 때' }
+    // label: 화면에 보이는 이름(전문 용어 대신 하려는 일), ex: 타일에 보일 대표 결과물
+    { id: 'brand',    label: '브랜드 만들기', ex: '포지셔닝, 이름, 로고, 컬러',  desc: '브랜드의 뼈대를 세울 때' },
+    { id: 'convert',  label: '판매·마케팅',   ex: '랜딩, 상세페이지, 광고',      desc: '방문자를 고객으로 바꿀 때' },
+    { id: 'product',  label: '앱·웹 화면',    ex: '홈 화면, 흐름, 디자인 시스템', desc: '앱과 웹의 화면을 설계할 때' },
+    { id: 'content',  label: '콘텐츠·SNS',    ex: '썸네일, 카드뉴스, 일러스트',   desc: '매주 콘텐츠를 만들 때' },
+    { id: 'persuade', label: '발표·보고',     ex: '피치덱, 보고서, 차트',        desc: '결정을 끌어내야 할 때' },
+    { id: 'review',   label: '점검·개선',     ex: 'UX 감사, 접근성, 출시 점검',   desc: '만든 결과물을 끌어올릴 때' }
   ],
 
   types: {
     strategy:  '브랜드 전략',
     naming:    '네이밍·말투',
     logo:      '로고',
-    identity:  '아이덴티티',
+    identity:  '브랜드 키트',
     icon:      '아이콘',
     color:     '컬러·타이포',
     image:     '이미지·일러스트',
     package:   '패키지',
     landing:   '랜딩·웹페이지',
-    detail:    '상세·비교',
+    detail:    '상세페이지·비교표',
     ad:        '광고·배너',
     crm:       '이메일·알림',
     poster:    '포스터·인쇄',
@@ -34,7 +35,7 @@ window.DB = {
     social:    'SNS·썸네일',
     slide:     '슬라이드',
     doc:       '문서·편집',
-    review:    '리뷰·감사'
+    review:    '리뷰·점검'
   },
 
   // 결과물이 어떤 형태로 나오는지
