@@ -4,7 +4,7 @@ window.PROMPTS.push(
   id: '019', p: 'convert', t: 'landing', out: 'spec', x: true,
   title: '전환형 랜딩페이지 구조 설계',
   role: '구독형 서비스의 전환율을 개선해 온 그로스 디자이너',
-  ctx: ['brand', 'what', 'audience', 'need', 'alt', 'money'],
+  ctx: ['brand', 'what', 'audience', 'need', 'alt', 'money', 'core'],
   task: '{brand} 랜딩페이지를, 방문자가 첫 스크롤 안에 "나를 위한 서비스"라고 느끼고 가입하도록 설계하세요.',
   steps: [
     '방문자가 들어오는 경로(광고, 검색, 추천)별로 무엇을 기대하고 오는지 정리하세요.',
@@ -29,11 +29,11 @@ window.PROMPTS.push(
   id: '020', p: 'convert', t: 'landing', out: 'code', x: true,
   title: '3초 안에 가치를 전하는 히어로 섹션',
   role: '랜딩 히어로만 수백 개 만든 웹 디자이너',
-  ctx: ['brand', 'what', 'audience', 'tone'],
+  ctx: ['brand', 'what', 'audience', 'tone', 'core'],
   task: '{brand} 랜딩페이지의 첫 화면을 3초 안에 가치가 전달되도록 설계하고 코드로 구현하세요.',
   steps: [
     '헤드라인은 결과(사용자가 얻는 것), 서브카피는 방법(어떻게)으로 역할을 나누세요.',
-    '시각 요소는 장식이 아니라 제품이 실제로 작동하는 모습을 보여 주게 하세요.',
+    '시각 요소는 장식이 아니라 제품이 실제로 작동하는 모습을 보여 주게 하세요. 브랜드 코어의 색과 모티프를 써서 다른 서비스와 헷갈리지 않게 하세요.',
     '첫 화면에는 주 행동 1개와 보조 행동 1개만 두세요.'
   ],
   output: [
@@ -53,7 +53,7 @@ window.PROMPTS.push(
   id: '021', p: 'convert', t: 'landing', out: 'code',
   title: '고민 없이 고르는 가격 페이지',
   role: 'SaaS 가격 전략과 요금제 페이지를 설계하는 프라이싱 디자이너',
-  ctx: ['brand', 'audience', 'money', 'alt'],
+  ctx: ['brand', 'audience', 'money', 'alt', 'core'],
   in: [{ k: 'plans', l: '요금제 구성안 (이름, 가격, 기능)' }],
   task: '{brand}의 가격 페이지를 사용자가 비교하느라 지치지 않고 맞는 요금제를 바로 고르도록 설계하세요. 현재 구성: {plans}',
   steps: [
@@ -79,7 +79,7 @@ window.PROMPTS.push(
   id: '022', p: 'convert', t: 'detail', out: 'spec',
   title: '모바일 스크롤로 사게 만드는 상세페이지',
   role: '국내 이커머스 상세페이지를 기획·디자인해 온 커머스 디자이너',
-  ctx: ['brand', 'audience', 'need', 'alt', 'platform'],
+  ctx: ['brand', 'audience', 'need', 'alt', 'platform', 'core'],
   in: [{ k: 'product', l: '상품명과 핵심 스펙' }, { k: 'price', l: '판매가' }],
   task: '"{product}" 상세페이지를, 모바일에서 스크롤하며 구매를 결정하도록 설계하세요. 판매가: {price}',
   steps: [
@@ -130,7 +130,7 @@ window.PROMPTS.push(
   id: '024', p: 'convert', t: 'ad', out: 'code',
   title: '규격이 바뀌어도 무너지지 않는 배너 시스템',
   role: '캠페인 배너를 여러 규격으로 확장하는 디지털 디자이너',
-  ctx: ['brand', 'tone', 'platform'],
+  ctx: ['brand', 'tone', 'platform', 'core'],
   in: [{ k: 'campaign', l: '캠페인 메시지와 기간' }],
   task: '"{campaign}" 배너를 여러 규격으로 늘려도 메시지와 위계가 무너지지 않도록 시스템을 설계하세요.',
   steps: [
@@ -155,7 +155,7 @@ window.PROMPTS.push(
   id: '025', p: 'convert', t: 'poster', out: 'image', x: true,
   title: '멀리서도 읽히는 캠페인 포스터',
   role: '브랜드 캠페인 키 비주얼을 만드는 그래픽 디자이너',
-  ctx: ['brand', 'tone', 'audience'],
+  ctx: ['brand', 'tone', 'audience', 'core'],
   in: [{ k: 'product', l: '제품·서비스와 핵심 메시지' }],
   task: '"{product}" 캠페인 포스터를 멀리서도 한눈에 읽히는 키 비주얼로 설계하세요.',
   steps: [
@@ -206,7 +206,7 @@ window.PROMPTS.push(
   id: '027', p: 'convert', t: 'ad', out: 'spec',
   title: '설치를 부르는 앱스토어 스크린샷 6장',
   role: '앱스토어 전환율 최적화를 하는 ASO 디자이너',
-  ctx: ['brand', 'what', 'audience', 'need'],
+  ctx: ['brand', 'what', 'audience', 'need', 'core'],
   in: [{ k: 'features', l: '핵심 기능 3~5개' }],
   task: '{brand} 앱스토어 스크린샷 6장을, 사용자가 처음 3장만 보고도 설치하고 싶게 설계하세요. 핵심 기능: {features}',
   steps: [
@@ -231,7 +231,7 @@ window.PROMPTS.push(
   id: '028', p: 'convert', t: 'app', out: 'spec', x: true,
   title: '가치를 먼저 보여 주는 온보딩과 페이월',
   role: '구독 앱의 온보딩과 결제 전환을 설계하는 프로덕트 디자이너',
-  ctx: ['brand', 'what', 'audience', 'money'],
+  ctx: ['brand', 'what', 'audience', 'money', 'core'],
   task: '{brand} 앱의 첫 실행부터 결제 제안까지를, 사용자가 가치를 먼저 경험한 뒤 결제하도록 설계하세요.',
   steps: [
     '사용자가 "아, 이거구나" 하는 순간(핵심 가치를 체감하는 행동)을 정의하세요.',
@@ -281,7 +281,7 @@ window.PROMPTS.push(
   id: '030', p: 'convert', t: 'landing', out: 'code',
   title: '헷갈림 없는 이벤트·프로모션 페이지',
   role: '시즌 프로모션을 기획하는 마케팅 디자이너',
-  ctx: ['brand', 'audience', 'money'],
+  ctx: ['brand', 'audience', 'money', 'core'],
   in: [{ k: 'promo', l: '프로모션 내용 (혜택, 기간, 조건)' }],
   task: '"{promo}" 프로모션 페이지를, 혜택이 3초 안에 이해되고 참여 방법이 헷갈리지 않도록 설계하세요.',
   steps: [
@@ -332,7 +332,7 @@ window.PROMPTS.push(
   id: '032', p: 'convert', t: 'landing', out: 'code',
   title: '진짜 수요를 재는 사전 신청 페이지',
   role: '출시 전 수요를 검증하는 린 스타트업 디자이너',
-  ctx: ['brand', 'what', 'audience', 'need', 'money'],
+  ctx: ['brand', 'what', 'audience', 'need', 'money', 'core'],
   task: '{brand} 출시 전에 실제 수요를 측정할 수 있는 사전 신청 페이지를 만드세요.',
   steps: [
     '검증할 가설을 하나로 정하세요 (예: 월 9,900원을 낼 의향이 있는가).',
@@ -357,7 +357,7 @@ window.PROMPTS.push(
   id: '033', p: 'convert', t: 'detail', out: 'code',
   title: '차이만 보이는 비교표 UI',
   role: '복잡한 제품 비교를 쉽게 만드는 정보 디자이너',
-  ctx: ['brand', 'audience', 'alt'],
+  ctx: ['brand', 'audience', 'alt', 'core'],
   in: [{ k: 'items', l: '비교할 제품·요금제와 항목' }],
   task: '아래 비교 대상을 사용자가 자신에게 중요한 차이만 빠르게 볼 수 있는 비교 UI로 설계하세요. 비교 대상: {items}',
   steps: [
@@ -382,7 +382,7 @@ window.PROMPTS.push(
   id: '034', p: 'convert', t: 'poster', out: 'code',
   title: '2초 안에 읽히는 오프라인 홍보물',
   role: '오프라인 매장 홍보물을 만드는 편집 디자이너',
-  ctx: ['brand', 'audience', 'tone'],
+  ctx: ['brand', 'audience', 'tone', 'core'],
   in: [{ k: 'item', l: '제작물 종류와 규격 (전단, X배너, 메뉴판 등)' }, { k: 'info', l: '들어갈 정보' }],
   task: '{item}을(를) 지나가는 사람이 2초 안에 핵심을 읽도록 설계하세요. 들어갈 정보: {info}',
   steps: [
