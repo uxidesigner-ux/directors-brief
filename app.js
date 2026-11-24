@@ -121,6 +121,7 @@
       DB.principles.forEach(function (x) { if (x.when(p)) L.push('- ' + x.line); });
       if (p.out === 'image') L.push('- ' + DB.imageRule);
     }
+    if (p.out === 'code' && p.p !== 'brand' && ['044', '053', '063', '091'].indexOf(p.id) < 0) L.push('', DB.visualRef);
     L.push('', '## 출력 전 자기 검수', '아래 기준으로 결과물을 스스로 점검하고, 통과하지 못한 부분은 고친 결과만 출력하세요. 검수 결과표는 따로 쓰지 마세요.');
     p.checks.forEach(function (c) { L.push('- ' + fill(c, p)); });
     if (p.out === 'code') L.push('- 그대로 열었을 때 깨지지 않는가: 가려짐·잘림·두 줄로 깨진 버튼 없음, 390px 정상, [hidden] 유지, 누를 요소 44px 이상, 본문 15px 이상, 한글 keep-all');
