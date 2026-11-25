@@ -29,6 +29,14 @@
   var purposeById = {}, ctxByKey = {}, byId = {}, courseById = {};
   DB.purposes.forEach(function (p) { purposeById[p.id] = p; });
   DB.ctx.forEach(function (c, i) { ctxByKey[c.k] = c; c.i = i; });
+  // 목적별 기본 맥락: 서비스·사용자 문제·수익을 모르면 AI가 일반론으로 답한다 (콘텐츠 검증에서 확인)
+  var BASE_CTX = { convert: ['what', 'audience', 'need', 'money'], persuade: ['what', 'audience', 'need', 'money'], review: ['what', 'audience', 'need', 'money'], product: ['what', 'audience', 'need'] };
+  var CTX_SKIP = ['075', '077', '079', '092', '093', '096', '098'];
+  window.PROMPTS.forEach(function (p) {
+    var add = BASE_CTX[p.p];
+    if (!add || CTX_SKIP.indexOf(p.id) > -1 || p.t === 'system' || p.t === 'motion') return;
+    add.forEach(function (k) { if (p.ctx.indexOf(k) < 0) p.ctx.splice(p.ctx.indexOf('core') > -1 ? p.ctx.indexOf('core') : p.ctx.length, 0, k); });
+  });
   COURSES.forEach(function (c) { courseById[c.id] = c; });
   PROMPTS.forEach(function (p) {
     byId[p.id] = p;
