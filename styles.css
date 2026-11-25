@@ -660,3 +660,13 @@ html.vt-on .top { view-transition-name: top; }
 .step__stale { display: inline-block; margin-top: 6px; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: var(--t-12); font-weight: 800; }
 .field__help { margin: 0; font-size: var(--t-13); color: var(--ink-3); word-break: keep-all; }
 .qsum__group { margin: 20px 0 6px; font-size: var(--t-14); font-weight: 800; color: var(--ink-2); }
+.step__stale--unknown { background: var(--surface-2); color: var(--ink-2); }
+.reuse-list { display: grid; gap: 12px; margin-top: 12px; }
+.reuse { padding: 14px; border-radius: var(--r-ctl); background: var(--surface-2); }
+.reuse__label { margin: 0 0 6px; font-size: var(--t-13); font-weight: 800; color: var(--ink-2); }
+.reuse__text { margin: 0 0 10px; font-size: var(--t-15); color: var(--ink); white-space: pre-wrap; word-break: keep-all; }
+.reuse__btn { width: 100%; min-height: 44px; margin-bottom: 6px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+.reuse__btn[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.legacy-note { margin-bottom: 12px; padding: 14px; border-radius: var(--r-ctl); background: var(--accent-soft); font-size: var(--t-14); color: var(--ink); word-break: keep-all; }
+.legacy-note p { margin: 0 0 10px; }
+.legacy-note .btn { width: 100%; min-height: 44px; }

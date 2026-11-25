@@ -9,7 +9,15 @@
   /* ---------- 저장 ---------- */
   var store = {
     get: function (k, d) { try { var v = localStorage.getItem('db.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
-    set: function (k, v) { try { localStorage.setItem('db.' + k, JSON.stringify(v)); } catch (e) { /* 저장할 수 없는 환경 */ } }
+    set: function (k, v) { try { localStorage.setItem('db.' + k, JSON.stringify(v)); } catch (e) { /* 저장할 수 없는 환경 */ } },
+    // 같은 브라우저의 다른 탭이 바꾼 값을 지우지 않도록, 저장 직전에 최신 값을 다시 읽어 이번에 바꾼 칸만 고친다.
+    // 같은 칸을 두 탭에서 고치면 마지막에 저장한 쪽이 남는다. 비우거나 지운 칸도 그대로 저장되어 되살아나지 않는다.
+    patch: function (k, d, fn) {
+      var cur = store.get(k, d);
+      if (cur === null || typeof cur !== 'object') cur = d;
+      var out = fn(cur); if (out !== undefined) cur = out;
+      store.set(k, cur); return cur;
+    }
   };
   var state = {
     brief: store.get('brief', {}),
@@ -19,13 +27,51 @@
     recent: store.get('recent', []),
     searches: store.get('searches', []),
     courses: store.get('courses', {}),
-    copyLog: store.get('copylog', {}),
+    // 코스·단계별로 마지막에 복사한 원문의 지문. 키는 "코스id:프롬프트id", 코스 밖 복사는 "_:프롬프트id"
+    copyLog: store.get('copylog2', {}),
     mode: store.get('mode', 'explore'),
     principles: store.get('principles', true),
     f: { p: 'all', types: new Set(), outs: new Set() },
     draft: { types: new Set(), outs: new Set() },
     openId: null, courseId: null, drawerCourse: null, bIdx: 0, lib: 'fav'
   };
+
+  /* ---------- 여러 탭: 칸 단위로 저장하고, 다른 탭의 저장을 받아 온다 ---------- */
+  function saveBrief(k, v) { state.brief = store.patch('brief', {}, function (b) { b[k] = v; }); keepTyping(); }
+  function saveInput(id, k, v) { state.inputs = store.patch('inputs', {}, function (all) { var o = all[id] = all[id] || {}; o[k] = v; }); keepTyping(); }
+  // 이 탭에서 지금 입력 중인 칸 (입력한 뒤 아직 포커스를 벗어나지 않은 칸)
+  function typingField() {
+    var el = document.activeElement;
+    if (!el || el.dataset.dirty !== '1') return null;
+    if (el.dataset.dec) return { kind: 'brief', k: el.dataset.dec, v: el.value };
+    if (el.id === 'bInput') return { kind: 'brief', k: DB.ctx[state.bIdx].k, v: el.value };
+    if (el.dataset.k && el.closest('#dInputs') && state.openId) return { kind: 'input', id: state.openId, k: el.dataset.k, v: el.value };
+    return null;
+  }
+  // 다른 탭이 같은 칸을 바꿔도 입력 중인 글은 덮지 않는다
+  function keepTyping() {
+    var t = typingField(); if (!t) return;
+    if (t.kind === 'brief') state.brief[t.k] = t.v;
+    else { state.inputs[t.id] = state.inputs[t.id] || {}; state.inputs[t.id][t.k] = t.v; }
+  }
+  // 저장소의 최신 값을 읽어 온다. 미리보기와 실제 복사 원문이 항상 같은 최신 값을 쓴다
+  function pullState() {
+    state.brief = store.get('brief', {}); state.inputs = store.get('inputs', {});
+    state.courses = store.get('courses', {}); state.copyLog = store.get('copylog2', {});
+    state.fav = new Set(store.get('fav', [])); state.copied = new Set(store.get('copied', []));
+    state.recent = store.get('recent', []); state.searches = store.get('searches', []);
+    state.mode = store.get('mode', 'explore'); state.principles = store.get('principles', true);
+    keepTyping();
+  }
+  document.addEventListener('input', function (e) { if (e.target.matches && e.target.matches('textarea, input')) e.target.dataset.dirty = '1'; }, true);
+  document.addEventListener('focusout', function (e) {
+    var el = e.target; if (!el.dataset || el.dataset.dirty !== '1') return;
+    // 입력을 마친 칸은 다시 저장해, 입력하는 동안 다른 탭이 같은 칸을 바꿨더라도 이 탭에서 쓴 글이 남게 한다
+    if (el.dataset.dec) saveBrief(el.dataset.dec, el.value);
+    else if (el.id === 'bInput') saveBrief(DB.ctx[state.bIdx].k, el.value);
+    else if (el.dataset.k && el.closest('#dInputs') && state.openId) saveInput(state.openId, el.dataset.k, el.value);
+    delete el.dataset.dirty;
+  }, true);
 
   var purposeById = {}, ctxByKey = {}, byId = {}, courseById = {};
   DB.purposes.forEach(function (p) { purposeById[p.id] = p; });
@@ -130,6 +176,20 @@
     flow: '정상 경로 1줄과 예외 경로 1줄(무엇이 막히고, 무엇을 유지하고, 사용자가 무엇을 골라 다시 확정하는지)',
     launch: '발행 채널, 날짜·시간, 정원, 참가비·가격, 신청 경로(같은 링크 하나)'
   };
+  // 발행 결정을 쓰는 작업은 공통 브리프의 플랫폼·채널도 함께 받는다 (발행 결정에 채널이 없을 때의 기본값)
+  PROMPTS.forEach(function (p) { if (decUse(p).indexOf('launch') > -1 && p.ctx.indexOf('platform') < 0) p.ctx.push('platform'); });
+  // 앞 단계에 적은 원자료를 사용자가 골라서 다음 단계에 넘긴다. fills: 이 자료로 대신할 수 있는 이번 단계 입력
+  var REUSE = {
+    '075': [{ id: '073', k: 'traction', fills: 'dataset' }],
+    '076': [{ id: '073', k: 'traction' }, { id: '075', k: 'dataset' }]
+  };
+  function reuseList(p) {
+    var sel = ((state.inputs[p.id] || {})['@reuse']) || [];
+    return (REUSE[p.id] || []).map(function (r) {
+      var src = byId[r.id], label = src.in.filter(function (i) { return i.k === r.k; })[0].l.replace(/\s*\(.*\)$/, ''), text = val((state.inputs[r.id] || {})[r.k]);
+      return { key: r.id + '.' + r.k, id: r.id, label: label, text: text, fills: r.fills, on: !!text && sel.indexOf(r.id + '.' + r.k) > -1 };
+    });
+  }
   function decMake(p) { return DB.ctx.filter(function (c) { return c.dec && c.from === p.id && DEC_MAKE[c.k]; }).map(function (c) { return c.k; }); }
   function decFilled(p) { return decUse(p).filter(function (k) { return val(state.brief[k]); }); }
 
@@ -145,9 +205,17 @@
     if (decs.length) {
       L.push('', '## 확정한 결정 (사용자가 정한 값, 가장 우선)');
       decs.forEach(function (k) { L.push('- ' + ctxByKey[k].label + ': ' + mark(resolve(k, p))); });
+      if (decs.indexOf('launch') > -1) L.push('- 발행 채널: 위 "발행 채널과 신청 경로"에 채널이 적혀 있으면 그 채널이 우선합니다. 적혀 있지 않으면 프로젝트 맥락의 플랫폼·채널' + (val(state.brief.platform) ? '(' + val(state.brief.platform) + ')' : '') + '에 발행하세요.');
       L.push('- 위 값은 사용자가 이미 확정했습니다. 아래 디렉팅 원칙, 시각 기준의 예시 값, 기본 수치(예: 터치 44px)와 다르면 위 값을 따르세요. 바꾸지 말고 그대로 쓰고, 꼭 바꿔야 한다면 본문과 섞지 말고 이유와 함께 따로 제안하세요.');
     }
-    L.push('', '## 과제', fill(p.task, p), '', '## 진행 방식');
+    L.push('', '## 과제', fill(p.task, p));
+    var reused = reuseList(p).filter(function (r) { return r.on; });
+    if (reused.length) {
+      L.push('', '## 이전 단계에서 가져온 자료 (사용자가 확인하고 고른 원자료)');
+      reused.forEach(function (r) { L.push('- ' + r.id + ' ' + r.label + ': ' + r.text); });
+      L.push('- 사용자가 앞 단계에 직접 적은 원자료입니다. 숫자를 바꾸거나 다른 자료와 섞지 마세요. 기간·집단마다 분자와 분모를 따로 적고 비율을 따로 계산하세요. 대조군이 없거나 측정하지 않은 항목은 결론이 아니라 한계로 밝히세요.');
+    }
+    L.push('', '## 진행 방식');
     var n = 0;
     if (p.p === 'content' && p.out !== 'code' && ['social', 'motion', 'poster'].indexOf(p.t) > -1) L.push((++n) + '. 보는 사람이 지금 느끼는 감정(불안, 귀찮음, 의심 등) 1개와 다 본 뒤 느껴야 할 감정 1개를 정하세요. 장면과 문구는 그 감정의 변화를 보여 주는 데 쓰세요.');
     p.steps.forEach(function (s) { L.push((++n) + '. ' + fill(s, p)); });
@@ -169,7 +237,10 @@
       if (p.out === 'image') L.push('- ' + DB.imageRule);
     }
     if (p.out === 'code' && p.p !== 'brand' && ['044', '053', '063', '091'].indexOf(p.id) < 0) L.push('', DB.visualRefs[pickRef(p)]);
-    L.push('', '## 출력 전 자기 검수', '아래 기준으로 결과물을 스스로 점검하고, 통과하지 못한 부분은 고친 결과만 출력하세요. 검수 결과표는 따로 쓰지 마세요.');
+    var deliversTable = p.output.some(function (o) { return /점검|감사|판정|진단/.test(o); });
+    L.push('', '## 출력 전 자기 검수', '아래 기준은 제출하기 전에 스스로 확인하는 내부 점검입니다. 통과하지 못한 부분은 고친 결과만 내고, 이 내부 점검의 결과는 따로 쓰지 마세요.' +
+      (deliversTable ? ' 단, "산출물"에 적힌 점검·판정 결과표는 의뢰인에게 납품하는 결과물이므로 그 형식 그대로 작성하세요.' : '') +
+      (p.output.some(function (o) { return /관찰|미검증/.test(o); }) ? ' 시안 파일이나 주소가 없거나 직접 열어 조작할 수 없으면 관찰 근거를 지어내지 말고 그 항목을 "미검증"으로 표시하세요.' : ''));
     p.checks.forEach(function (c) { L.push('- ' + fill(c, p)); });
     if (p.out === 'code') L.push('- 그대로 열었을 때 깨지지 않는가: 가려짐·잘림·두 줄로 깨진 버튼 없음, 390px 정상, [hidden] 유지, 누를 요소 44px 이상, 본문 15px 이상, 한글 keep-all');
     if (decs.length) L.push('- 확정한 결정의 값(색·수치·경로·요청·일정·가격·링크)이 결과물 곳곳에 바뀌지 않고 같은 값으로 쓰였는가');
@@ -405,31 +476,38 @@
       setTimeout(function () { b.classList.remove('is-done'); }, 1600);
     });
   }
-  function copyPrompt(id, quiet) {
-    var p = byId[id], composed = compose(p), n = blanks(composed);
-    return copyText(plain(composed)).then(function (ok) {
-      if (!ok) { toast('복사하지 못했어요', '프롬프트를 길게 눌러 직접 복사해 주세요.'); if (!state.openId) openPrompt(id, true); return false; }
+  // 복사한 원문의 지문을 돌려준다 (실패하면 null). course: 실패 뒤 열리는 상세가 이어받을 코스
+  function copyPrompt(id, quiet, course) {
+    var p = byId[id], composed = compose(p), n = blanks(composed), text = plain(composed);
+    return copyText(text).then(function (ok) {
+      if (!ok) { toast('복사하지 못했어요', '프롬프트를 길게 눌러 직접 복사해 주세요.'); if (!state.openId) openPrompt(id, true, course); return null; }
       haptic();
-      state.copied.add(id); store.set('copied', Array.from(state.copied));
-      state.copyLog[id] = hashText(plain(composed)); store.set('copylog', state.copyLog);
-      state.recent = [id].concat(state.recent.filter(function (x) { return x !== id; })).slice(0, 8); store.set('recent', state.recent);
+      state.copied = new Set(store.patch('copied', [], function (a) { if (a.indexOf(id) < 0) a.push(id); }));
+      state.recent = store.patch('recent', [], function (a) { return [id].concat(a.filter(function (x) { return x !== id; })).slice(0, 8); });
       flashCopy(id);
       var card = $('.card[data-id="' + id + '"]');
       if (card) { card.classList.add('is-copied'); card.classList.remove('is-stamped'); void card.offsetWidth; card.classList.add('is-stamped'); setTimeout(function () { card.classList.remove('is-stamped'); }, 2000); }
       if (!quiet) toast(id + ' 복사했어요', n ? '빈칸 ' + n + '개는 붙여넣은 뒤 채워 주세요.' : 'Claude에 붙여넣으세요.');
       if (isOpen('libSheet')) renderLib();
-      return true;
+      return hashText(text);
     });
   }
   function hashText(t) { var h = 5381; for (var i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return String(h >>> 0); }
-  // 이전에 복사한 원문과 지금 원문이 다르면(앞 단계 결정이 바뀌었으면) 다시 복사할 필요가 있다
-  function isStale(id) { var h = state.copyLog[id]; return h != null && h !== hashText(plain(compose(byId[id]))); }
+  // 코스의 한 단계가 지금 원문과 같은 버전으로 복사됐는지. 각 코스가 마지막으로 복사한 원문을 기준으로 본다.
+  // '' = 최신, 'stale' = 그 뒤 결정이 바뀜, 'unknown' = 복사 기록은 있지만 그때 원문을 모름(이전 버전에서 복사)
+  function stepState(cid, id) {
+    if ((state.courses[cid] || []).indexOf(id) < 0) return '';
+    var h = state.copyLog[cid + ':' + id];
+    if (h == null) return 'unknown';
+    return h === hashText(plain(compose(byId[id]))) ? '' : 'stale';
+  }
 
   /* ---------- 복사 전 빈칸 확인 ---------- */
   function missingFor(p) {
     var out = [];
+    var covered = reuseList(p).filter(function (r) { return r.on && r.fills; }).map(function (r) { return r.fills; });
     (p.in || []).forEach(function (i) {
-      if (i.opt || val((state.inputs[p.id] || {})[i.k])) return;
+      if (i.opt || val((state.inputs[p.id] || {})[i.k]) || covered.indexOf(i.k) > -1) return;
       out.push({ kind: 'in', k: i.k, label: i.l, why: '이번 작업의 재료예요. 비어 있으면 AI가 내용을 지어내거나 되물어서 결과를 그대로 쓰기 어려워요.' });
     });
     p.ctx.forEach(function (k) {
@@ -438,19 +516,31 @@
     });
     return out;
   }
-  var pending = null, confirmReturn = null;
+  // 확인창도 방문 기록에 한 칸을 차지한다: 뒤로가기 한 번이면 확인창과 보류한 복사만 취소된다
+  var pending = null, confirmReturn = null, confirmPushed = false, confirmNext = null;
   // 모든 복사 버튼이 거치는 길: 빈칸 확인 → 복사 → (코스에서 왔으면) 그 코스 기록
   function requestCopy(id, o) {
     o = o || {};
+    pullState();
     var miss = missingFor(byId[id]);
     if (!miss.length) return doCopy(id, o);
     pending = { id: id, o: o, miss: miss };
     showConfirm();
     return Promise.resolve(false);
   }
+  // 복사를 요청한 코스가 아직 화면에 있을 때만 그 코스에 기록한다 (떠난 화면의 요청은 기록하지 않는다)
+  function courseLive(cid) {
+    return !!cid && ((isOpen('courseSheet') && state.courseId === cid) || (isOpen('drawer') && state.drawerCourse === cid));
+  }
   function doCopy(id, o) {
-    return copyPrompt(id, !!o.course).then(function (ok) {
-      if (ok && o.course) recordStep(o.course, id);
+    pullState();
+    var cid = courseLive(o.course) ? o.course : null;
+    return copyPrompt(id, !!cid, cid).then(function (h) {
+      var ok = h != null;
+      if (ok) {
+        state.copyLog = store.patch('copylog2', {}, function (l) { l[(cid || '_') + ':' + id] = h; });
+        if (cid) recordStep(cid, id);
+      }
       if (o.after) o.after(ok);
       return ok;
     });
@@ -462,12 +552,19 @@
     $('#cfLead').textContent = '지금 복사하면 아래 칸이 [ ]로 남아요. 결과에 미치는 영향을 확인하고 골라 주세요.';
     $('#cfList').innerHTML = m.map(function (x) { return '<li><b>' + esc(x.label) + '</b>' + esc(x.why) + '</li>'; }).join('');
     $('#confirmScrim').hidden = false; $('#confirm').hidden = false;
+    history.pushState(Object.assign({}, history.state || {}, { confirm: 1 }), '', location.href); confirmPushed = true;
     $('#cfFill').focus();
   }
-  function hideConfirm() {
+  // 화면에서만 닫는다. 보류한 복사는 버린다
+  function closeConfirmUI() {
     $('#confirmScrim').hidden = true; $('#confirm').hidden = true;
     var r = confirmReturn; pending = null; confirmReturn = null;
     if (r && r.focus && document.contains(r)) r.focus({ preventScroll: true });
+  }
+  // 확인창을 닫고 방문 기록의 확인창 칸도 지운다. then: 기록이 정리된 뒤 할 일
+  function hideConfirm(then) {
+    if (confirmPushed) { confirmNext = then || null; closeConfirmUI(); history.back(); }
+    else { closeConfirmUI(); if (then) then(); }
   }
   function fillFirst(pd) {
     var first = pd.miss[0];
@@ -481,9 +578,12 @@
   function recordStep(cid, id) {
     var c = courseById[cid]; if (!c) return;
     var idx = c.steps.map(function (s) { return s.id; }).indexOf(id); if (idx < 0) return;
-    var d = state.courses[cid] || [], fresh = d.indexOf(id) < 0;
-    if (fresh) d.push(id);
-    state.courses[cid] = d; store.set('courses', state.courses);
+    var fresh = false;
+    state.courses = store.patch('courses', {}, function (all) {
+      var d = all[cid] || []; fresh = d.indexOf(id) < 0;
+      if (fresh) d.push(id);
+      all[cid] = d;
+    });
     renderCourses(); if (isOpen('courseSheet') && state.courseId === cid) renderCourse();
     var done = courseDone(c), total = c.steps.length, prog = total + '단계 중 ' + done + '개 복사';
     toast((idx + 1) + '단계 복사했어요', fresh ? prog + (done === total ? '. 결과를 같은 대화에서 다듬어 보세요.' : (idx === 0 ? '. 새 대화에 붙여넣으세요.' : '. 같은 대화에 이어서 붙여넣으세요.')) : '다시 복사했어요. 진행 기록은 그대로예요 (' + prog + ').');
@@ -495,8 +595,8 @@
     if (bump && n) { el.classList.remove('is-bump'); void el.offsetWidth; el.classList.add('is-bump'); }
   }
   function toggleFav(id) {
-    if (state.fav.has(id)) state.fav.delete(id); else state.fav.add(id);
-    store.set('fav', Array.from(state.fav));
+    var want = !state.fav.has(id);
+    state.fav = new Set(store.patch('fav', [], function (a) { a = a.filter(function (x) { return x !== id; }); if (want) a.push(id); return a; }));
     var on = state.fav.has(id);
     haptic(); renderLibCount(true);
     $$('.mark-ic[data-mark="' + id + '"]').forEach(function (b) {
@@ -513,10 +613,10 @@
   function isOpen(id) { return stack.some(function (x) { return x.id === id; }); }
   function lockScroll() { if (body.classList.contains('is-locked')) return; lockY = window.scrollY; body.style.top = -lockY + 'px'; body.classList.add('is-locked'); }
   function unlockScroll() { body.classList.remove('is-locked'); body.style.top = ''; window.scrollTo(0, lockY); }
-  function showSheet(el, push, url) {
+  function showSheet(el, push, url, extra) {
     if (stack.indexOf(el) > -1) return;
     el._pushed = !!push;
-    if (push) history.pushState({ sheet: el.id }, '', url || location.href);
+    if (push) history.pushState(Object.assign({ sheet: el.id }, extra || {}), '', url || location.href);
     focusStack.push(document.activeElement);
     stack.push(el);
     var scrim = $('#scrim');
@@ -548,7 +648,7 @@
     } else { scrim.style.zIndex = 43 + stack.length * 2; }
     if (el.id === 'drawer') state.openId = null;
     if (el.id === 'courseSheet') state.courseId = null;
-    if (el.id === 'briefDrawer') { store.set('brief', state.brief); renderBriefBar(); renderList(false); if (state.openId) renderDrawer(); }
+    if (el.id === 'briefDrawer') { renderBriefBar(); renderList(false); if (state.openId) renderDrawer(); }
     if (el.id === 'drawer' && isOpen('courseSheet')) renderCourse();
     if (el.id === 'filterSheet' && state.pendingApply) {
       state.pendingApply = false; renderList(true);
@@ -563,6 +663,13 @@
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
   }
   window.addEventListener('popstate', function (e) {
+    if (confirmPushed) {
+      // 확인창 칸에서 한 칸 뒤로: 확인창과 보류한 복사만 취소하고 아래 화면은 그대로 둔다
+      confirmPushed = false;
+      if (!$('#confirm').hidden) closeConfirmUI();
+      var n = confirmNext; confirmNext = null; if (n) n();
+      return;
+    }
     var top = stack[stack.length - 1];
     if (top && top._pushed) { hideSheet(top); return; }
     // iOS 사파리처럼 브라우저가 이미 스와이프 전환을 보여줬다면 다시 움직이지 않는다
@@ -601,8 +708,7 @@
   }
   function saveSearch(q) {
     q = val(q); if (!q) return;
-    state.searches = [q].concat(state.searches.filter(function (x) { return x !== q; })).slice(0, 6);
-    store.set('searches', state.searches);
+    state.searches = store.patch('searches', [], function (a) { return [q].concat(a.filter(function (x) { return x !== q; })).slice(0, 6); });
   }
   function renderSearch() {
     var q = val($('#sq').value);
@@ -811,23 +917,23 @@
   function renderCourse() {
     var c = courseById[state.courseId]; if (!c) return;
     var doneIds = state.courses[c.id] || [], done = courseDone(c), total = c.steps.length;
-    var nextIdx = -1, staleIdx = -1;
+    var nextIdx = -1, redoIdx = -1, states = c.steps.map(function (s) { return stepState(c.id, s.id); });
     c.steps.some(function (s, i) { if (doneIds.indexOf(s.id) < 0) { nextIdx = i; return true; } return false; });
-    c.steps.some(function (s, i) { if (doneIds.indexOf(s.id) > -1 && isStale(s.id)) { staleIdx = i; return true; } return false; });
+    redoIdx = states.indexOf('stale'); if (redoIdx < 0) redoIdx = states.indexOf('unknown');
     $('#cMeta').innerHTML = '<span class="tag">코스</span><span class="tag">' + total + '단계</span>';
     $('#cTitle').textContent = c.title;
     $('#cWho').textContent = c.who + '에게. ' + c.result + ' 순서대로 받아요.';
     $('#cBar').style.width = (done / total * 100) + '%';
     $('#cProg').textContent = total + '단계 중 ' + done + '개 복사';
     $('#cSteps').innerHTML = c.steps.map(function (s, i) {
-      var p = byId[s.id], isDone = doneIds.indexOf(s.id) > -1, st = isDone && isStale(s.id);
+      var p = byId[s.id], isDone = doneIds.indexOf(s.id) > -1, st = states[i];
       return '<li class="step' + (isDone ? ' is-done' : '') + (i === nextIdx ? ' is-next' : '') + '">' +
         '<span class="step__n">' + (i + 1) + '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' +
-        '<div class="step__body"><button class="step__title" type="button" data-open="' + s.id + '">' + esc(p.title) + '</button><p class="step__note">' + esc(s.note) + '</p>' + (st ? '<span class="step__stale">결정이 바뀌었어요 · 다시 복사</span>' : '') + '</div>' +
+        '<div class="step__body"><button class="step__title" type="button" data-open="' + s.id + '">' + esc(p.title) + '</button><p class="step__note">' + esc(s.note) + '</p>' + (st === 'stale' ? '<span class="step__stale">결정이 바뀌었어요 · 다시 복사</span>' : st === 'unknown' ? '<span class="step__stale step__stale--unknown">버전 미확인 · 다시 복사하면 최신으로</span>' : '') + '</div>' +
         copyBtn(s.id, (i + 1) + '단계 프롬프트 복사') + '<span class="sr">' + (isDone ? '완료' : '') + '</span></li>';
     }).join('');
-    $('#cNext').textContent = nextIdx > -1 ? (nextIdx + 1) + '단계 복사' : (staleIdx > -1 ? (staleIdx + 1) + '단계 다시 복사' : '모든 단계를 복사했어요');
-    $('#cNext').disabled = nextIdx < 0 && staleIdx < 0;
+    $('#cNext').textContent = nextIdx > -1 ? (nextIdx + 1) + '단계 복사' : (redoIdx > -1 ? (redoIdx + 1) + '단계 다시 복사' : '모든 단계를 복사했어요');
+    $('#cNext').disabled = nextIdx < 0 && redoIdx < 0;
     $('#cReset').hidden = !done;
   }
   /* ---------- 프롬프트 상세 ---------- */
@@ -838,7 +944,9 @@
     state.drawerCourse = course && courseById[course] && courseById[course].steps.some(function (s) { return s.id === id; }) ? course : null;
     renderDrawer(true);
     if (fresh) $('#dBody').scrollTop = 0;
-    if (!isOpen('drawer')) showSheet($('#drawer'), push, '#' + id);
+    // 어느 코스에서 열었는지는 이 탭의 방문 기록 칸에만 적는다. 주소(#076)를 복사해 새로 열면 출처가 없다
+    if (!isOpen('drawer')) showSheet($('#drawer'), push, '#' + id, { from: state.drawerCourse });
+    else if (history.state && history.state.sheet === 'drawer') history.replaceState(Object.assign({}, history.state, { from: state.drawerCourse }), '', '#' + id);
   }
   var MODE_LABEL = { explore: '3안 먼저 보기', direct: '바로 완성하기' };
   var MODE_HELP = { explore: '방향 3개를 먼저 받고, 고른 방향으로 완성해요.', direct: '가장 근거가 강한 1안을 바로 받아요.' };
@@ -903,8 +1011,18 @@
       setFold(false, true);
       $('#dDisc').setAttribute('aria-expanded', 'false'); $('#dDiscPanel').classList.remove('is-open');
     }
-    if (full) renderDecs(p);
+    if (full) { renderDecs(p); renderReuse(p); }
     renderBriefRow(p); syncOpts(); renderPreview();
+  }
+  function renderReuse(p) {
+    var list = reuseList(p).filter(function (r) { return r.text; }), box = $('#dReuse');
+    box.hidden = !list.length;
+    box.innerHTML = list.map(function (r) {
+      return '<div class="reuse"><p class="reuse__label">이전 단계 자료 · ' + r.id + ' ' + esc(r.label) + '</p>' +
+        '<p class="reuse__text">' + esc(r.text) + '</p>' +
+        '<button class="btn btn--paper reuse__btn" type="button" data-reuse="' + r.key + '" aria-pressed="' + r.on + '">' + (r.on ? '이 자료 사용 중 · 빼기' : '이 자료 사용') + '</button>' +
+        '<p class="field__help">' + (r.on ? '원문 그대로 "이전 단계에서 가져온 자료"로 들어가요. 이번 단계 입력은 따로 전달돼요.' : '확인하고 맞으면 고르세요. 고르기 전에는 넣지 않아요.') + '</p></div>';
+    }).join('');
   }
   function renderDecs(p) {
     var use = decUse(p), make = decMake(p), makesCore = p.t === 'strategy' && use.indexOf('core') > -1;
@@ -916,7 +1034,12 @@
       var help = mk
         ? '이 작업 결과 맨 끝의 "' + (k === 'core' ? '브랜드 코어' : '확정 결정 · ' + c.label) + '" 중 확정한 줄만 붙여 넣으세요.' + (use.indexOf(k) > -1 ? ' 이미 정한 값이 있으면 이 작업도 그 값을 따라요.' : '')
         : '이 작업이 따르는 결정이에요. 비워 두면 넣지 않아요.';
-      return '<div class="field"><div class="field__head"><label class="field__label" for="' + fid + '">' + esc(c.label) + '</label></div>' +
+      var legacy = '';
+      if (k === 'visual' && !val(v) && /#[0-9a-fA-F]{3,8}\b|\d+\s*px/.test(state.brief.tone || '')) {
+        legacy = '<div class="legacy-note"><p>톤 키워드에 색·크기 값이 적혀 있어요: “' + esc(state.brief.tone) + '”. 이 값은 시각 기준으로 전달되지 않아요. 확정한 값이면 아래 칸에 옮겨 적고 필요 없는 말은 지우세요. 톤 키워드에는 말투만 남기면 돼요.</p>' +
+          '<button class="btn btn--paper" type="button" data-legacy-tone>톤 문장을 시각 기준 칸에 붙여 넣고 고치기</button></div>';
+      }
+      return legacy + '<div class="field"><div class="field__head"><label class="field__label" for="' + fid + '">' + esc(c.label) + '</label></div>' +
         '<textarea class="field__input" id="' + fid + '" data-dec="' + k + '" rows="2" placeholder="' + esc(c.hint) + '">' + esc(v) + '</textarea>' +
         '<p class="field__help">' + esc(help) + '</p></div>';
     }).join('');
@@ -963,7 +1086,7 @@
     syncOpts();
   }
   function stepNext() {
-    store.set('brief', state.brief); renderBriefBar();
+    saveBrief(DB.ctx[state.bIdx].k, $('#bInput').value); renderBriefBar();
     if (state.openId && isOpen('drawer')) { renderDecs(byId[state.openId]); renderBriefRow(byId[state.openId]); renderPreview(); }
     var pos = STEP_IDX.indexOf(state.bIdx);
     if (DB.ctx[state.bIdx].dec) { showSum(); toast('결정을 저장했어요', '이 결정이 필요한 작업의 프롬프트에 들어가요.'); }
@@ -1055,7 +1178,7 @@
   // 코스
   $('#cNext').addEventListener('click', function () {
     var c = courseById[state.courseId], d = state.courses[c.id] || [];
-    var next = c.steps.filter(function (s) { return d.indexOf(s.id) < 0; })[0] || c.steps.filter(function (s) { return isStale(s.id); })[0];
+    var next = c.steps.filter(function (s) { return d.indexOf(s.id) < 0; })[0] || c.steps.filter(function (s) { return stepState(c.id, s.id) === 'stale'; })[0] || c.steps.filter(function (s) { return stepState(c.id, s.id) === 'unknown'; })[0];
     if (next) requestCopy(next.id, { course: c.id });
   });
   $('#cShare').addEventListener('click', function () {
@@ -1064,15 +1187,18 @@
   });
   $('#cReset').addEventListener('click', function () {
     var id = state.courseId, before = (state.courses[id] || []).slice();
-    delete state.courses[id]; store.set('courses', state.courses); renderCourse(); renderCourses();
-    toast('진행 기록을 지웠어요', null, { label: '되돌리기', fn: function () { state.courses[id] = before; store.set('courses', state.courses); renderCourse(); renderCourses(); } });
+    state.courses = store.patch('courses', {}, function (all) { delete all[id]; }); renderCourse(); renderCourses();
+    toast('진행 기록을 지웠어요', null, { label: '되돌리기', fn: function () { state.courses = store.patch('courses', {}, function (all) { all[id] = before; }); renderCourse(); renderCourses(); } });
   });
 
   // 빈칸 확인
-  $('#cfFill').addEventListener('click', function () { var pd = pending; hideConfirm(); if (pd) fillFirst(pd); });
-  $('#cfBlank').addEventListener('click', function () { var pd = pending; hideConfirm(); if (pd) doCopy(pd.id, pd.o); });
-  $('#cfCancel').addEventListener('click', hideConfirm);
-  $('#confirmScrim').addEventListener('click', hideConfirm);
+  $('#cfFill').addEventListener('click', function () { var pd = pending; if (!pd) return; hideConfirm(function () { fillFirst(pd); }); });
+  // 클립보드는 누른 순간에만 쓸 수 있으므로 복사를 먼저 하고 확인창 기록을 지운다
+  $('#cfBlank').addEventListener('click', function () { var pd = pending; if (!pd) return; doCopy(pd.id, pd.o); hideConfirm(); });
+  $('#cfCancel').addEventListener('click', function () { hideConfirm(); });
+  $('#confirmScrim').addEventListener('click', function () { hideConfirm(); });
+  // 확인창을 띄운 채 다른 주소로 옮겨 가면 보류한 복사는 실행될 수 없다
+  window.addEventListener('hashchange', function () { if (!$('#confirm').hidden) { confirmPushed = false; confirmNext = null; closeConfirmUI(); } });
 
   // 상세
   $('#dCopy').addEventListener('click', function () {
@@ -1102,13 +1228,30 @@
   });
   $('#dInputs').addEventListener('input', function (e) {
     var k = e.target.dataset.k; if (!k) return;
-    var id = state.openId; state.inputs[id] = state.inputs[id] || {}; state.inputs[id][k] = e.target.value;
-    store.set('inputs', state.inputs); renderPreview();
+    saveInput(state.openId, k, e.target.value); renderPreview();
     var exb = $('#dInputs [data-ex="' + k + '"]'); if (exb) exb.hidden = !!val(e.target.value);
+  });
+  $('#dReuse').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-reuse]'); if (!b) return;
+    var id = state.openId, key = b.dataset.reuse;
+    state.inputs = store.patch('inputs', {}, function (all) {
+      var o = all[id] = all[id] || {}, sel = (o['@reuse'] || []).filter(function (x) { return x !== key; });
+      if (b.getAttribute('aria-pressed') !== 'true') sel.push(key);
+      o['@reuse'] = sel;
+    });
+    renderReuse(byId[id]); renderPreview(); haptic();
+    var nb = $('#dReuse [data-reuse="' + key + '"]'); if (nb) nb.focus({ preventScroll: true });
+  });
+  $('#dDecs').addEventListener('click', function (e) {
+    if (!e.target.closest('[data-legacy-tone]')) return;
+    var tone = state.brief.tone || '';
+    saveBrief('visual', tone); renderDecs(byId[state.openId]); renderPreview(); renderBriefBar();
+    var t = $('#dec-visual'); if (t) { t.focus({ preventScroll: true }); t.setSelectionRange(t.value.length, t.value.length); }
+    toast('시각 기준 칸에 옮겼어요', '확정한 색·크기만 남기고 나머지는 지우세요.');
   });
   $('#dDecs').addEventListener('input', function (e) {
     var k = e.target.dataset.dec; if (!k) return;
-    state.brief[k] = e.target.value; store.set('brief', state.brief);
+    saveBrief(k, e.target.value);
     renderPreview(); renderBriefBar();
     if (isOpen('courseSheet')) renderCourse();
   });
@@ -1117,7 +1260,7 @@
     var k = b.dataset.ex, id = state.openId, t = $('#in-' + id + '-' + k), ex = EX[id + '.' + k];
     if (!t || !ex) return;
     t.value = ex; t.classList.remove('is-filled-anim'); void t.offsetWidth; t.classList.add('is-filled-anim');
-    state.inputs[id] = state.inputs[id] || {}; state.inputs[id][k] = ex; store.set('inputs', state.inputs);
+    saveInput(id, k, ex);
     b.hidden = true; renderPreview(); haptic();
     toast('예시를 넣었어요', '내 상황에 맞게 고쳐서 쓰세요.');
   });
@@ -1129,7 +1272,7 @@
 
   // 브리프
   var bInput = $('#bInput');
-  bInput.addEventListener('input', function () { state.brief[DB.ctx[state.bIdx].k] = bInput.value; autoGrow(bInput); });
+  bInput.addEventListener('input', function () { saveBrief(DB.ctx[state.bIdx].k, bInput.value); autoGrow(bInput); });
   bInput.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); stepNext(); } });
   $('#bNext').addEventListener('click', stepNext);
   $('#bSkip').addEventListener('click', stepNext);
@@ -1201,10 +1344,29 @@
   window.addEventListener('resize', function () { clearTimeout(rTimer); rTimer = setTimeout(function () { renderRuler(); moveInd(true); railEdges(); }, 150); });
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { moveInd(true); });
 
+  /* ---------- 다른 탭에서 저장한 값 받기 ---------- */
+  function syncFields() {
+    var notTyping = function (el) { return el.dataset.dirty !== '1'; };
+    $$('#dDecs [data-dec]').forEach(function (t) { if (notTyping(t)) t.value = state.brief[t.dataset.dec] || ''; });
+    var inp = state.inputs[state.openId] || {};
+    $$('#dInputs [data-k]').forEach(function (t) { if (notTyping(t) && 'value' in t) t.value = inp[t.dataset.k] || ''; });
+    var b = $('#bInput'); if (isOpen('briefDrawer') && !$('#bStep').hidden && notTyping(b)) b.value = state.brief[DB.ctx[state.bIdx].k] || '';
+  }
+  window.addEventListener('storage', function (e) {
+    if (e.key !== null && String(e.key).indexOf('db.') !== 0) return;
+    pullState(); syncFields();
+    renderBriefBar(); renderCourses(); renderLibCount(); syncOpts();
+    if (isOpen('courseSheet')) renderCourse();
+    if (state.openId && isOpen('drawer')) { renderBriefRow(byId[state.openId]); renderReuse(byId[state.openId]); renderPreview(); $('#dFav').setAttribute('aria-pressed', state.fav.has(state.openId)); }
+    if (isOpen('libSheet')) renderLib();
+    if (isOpen('briefDrawer') && !$('#bSum').hidden) showSum();
+  });
+
   /* ---------- 시작 ---------- */
   function fromHash() {
     var h = (location.hash || '').replace('#', '');
-    if (/^\d{3}$/.test(h) && byId[h] && state.openId !== h) openPrompt(h, false);
+    var hs = history.state || {};
+    if (/^\d{3}$/.test(h) && byId[h] && state.openId !== h) openPrompt(h, false, hs.sheet === 'drawer' ? hs.from : null);
     else if (/^c-/.test(h) && courseById[h.slice(2)] && state.courseId !== h.slice(2)) openCourse(h.slice(2), false);
   }
   renderGoals(); renderCourses(); renderRail(); renderList(false);
