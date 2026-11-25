@@ -123,6 +123,7 @@
     });
     L.push('', '## 과제', fill(p.task, p), '', '## 진행 방식');
     var n = 0;
+    if (p.p === 'content' && p.out !== 'code' && ['social', 'motion', 'poster'].indexOf(p.t) > -1) L.push((++n) + '. 보는 사람이 지금 느끼는 감정(불안, 귀찮음, 의심 등) 1개와 다 본 뒤 느껴야 할 감정 1개를 정하세요. 장면과 문구는 그 감정의 변화를 보여 주는 데 쓰세요.');
     p.steps.forEach(function (s) { L.push((++n) + '. ' + fill(s, p)); });
     if (p.x) {
       L.push((++n) + '. ' + (state.mode === 'explore'
