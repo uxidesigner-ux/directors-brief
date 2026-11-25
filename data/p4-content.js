@@ -4,7 +4,7 @@ window.PROMPTS.push(
   id: '059', p: 'content', t: 'social', out: 'image', x: true,
   title: '작은 크기에서도 눌리는 유튜브 썸네일',
   role: '조회수 상위 채널의 썸네일을 기획하는 크리에이티브 디렉터',
-  ctx: ['brand', 'audience', 'tone'],
+  ctx: ['brand', 'what', 'audience', 'tone', 'need', 'money'],
   in: [{ k: 'video', l: '영상 제목과 핵심 내용' }],
   task: '아래 영상의 썸네일을, 작은 크기에서도 눌러 보고 싶고 채널 전체가 일관되어 보이도록 설계하세요. 영상: {video}',
   steps: [
@@ -29,7 +29,7 @@ window.PROMPTS.push(
   id: '060', p: 'content', t: 'social', out: 'code',
   title: '끝까지 넘기고 저장하는 카드뉴스 8장',
   role: '저장과 공유가 많은 카드뉴스를 기획하는 콘텐츠 디자이너',
-  ctx: ['brand', 'audience', 'tone'],
+  ctx: ['brand', 'what', 'audience', 'tone', 'need', 'money'],
   in: [{ k: 'topic', l: '주제와 전달할 핵심 정보' }],
   task: '"{topic}"을(를) 끝까지 넘겨 보고 저장하고 싶은 카드뉴스 8장으로 설계하세요.',
   steps: [
@@ -52,10 +52,10 @@ window.PROMPTS.push(
   id: '061', p: 'content', t: 'social', out: 'text',
   title: '매번 새로 만들지 않는 SNS 운영 시스템',
   role: '브랜드 SNS를 운영하는 소셜 크리에이티브 리드',
-  ctx: ['brand', 'audience', 'tone', 'platform'],
+  ctx: ['brand', 'what', 'audience', 'tone', 'platform', 'need', 'money'],
   task: '{brand}의 SNS 피드가 매번 새로 만들지 않아도 일관되면서 지루하지 않게 굴러가도록 콘텐츠 시스템을 만드세요.',
   steps: [
-    '콘텐츠 기둥 4~5개(정보, 사례, 제품, 커뮤니티 등)와 비율을 정하세요.',
+    '핵심 사용자가 실제로 정보를 얻는 채널을 먼저 고르고 채널별 역할을 나눈 뒤, 콘텐츠 기둥 4~5개(정보, 사례, 제품, 커뮤니티 등)와 비율을 정하세요.',
     '기둥별 템플릿과 시각 규칙을 정하세요.',
     '4주 발행 일정을 만드세요.'
   ],
@@ -146,7 +146,7 @@ window.PROMPTS.push(
   id: '065', p: 'content', t: 'poster', out: 'image', x: true,
   title: '행사 포스터와 확장되는 키 비주얼',
   role: '컨퍼런스·전시 키 비주얼을 만드는 그래픽 디자이너',
-  ctx: ['brand', 'audience', 'tone'],
+  ctx: ['brand', 'what', 'audience', 'tone', 'need', 'money'],
   in: [{ k: 'event', l: '행사명, 일시, 장소, 주제' }],
   task: '아래 행사의 포스터와, 여러 곳으로 넓혀 쓸 수 있는 키 비주얼을 설계하세요. 행사: {event}',
   steps: [
@@ -243,7 +243,7 @@ window.PROMPTS.push(
   id: '069', p: 'content', t: 'motion', out: 'image',
   title: '첫 2초에 붙잡는 숏폼 스토리보드',
   role: '브랜드 숏폼 영상을 기획하는 모션 디렉터',
-  ctx: ['brand', 'audience', 'tone'],
+  ctx: ['brand', 'what', 'audience', 'tone', 'need', 'money'],
   in: [{ k: 'message', l: '영상으로 전할 메시지' }],
   task: '"{message}"를 15~30초 세로 영상으로 전하는 스토리보드를 만드세요.',
   steps: [
@@ -268,7 +268,7 @@ window.PROMPTS.push(
   id: '070', p: 'content', t: 'social', out: 'code',
   title: '채널 프로필·커버 세트',
   role: '크리에이터 채널 브랜딩을 하는 디자이너',
-  ctx: ['brand', 'audience', 'tone', 'platform'],
+  ctx: ['brand', 'what', 'audience', 'tone', 'platform', 'need', 'money'],
   task: '{brand}의 SNS·커뮤니티 채널(프로필, 커버, 하이라이트 아이콘)을 하나의 세트로 설계하세요.',
   steps: [
     '채널별 규격과 잘리는 영역을 정리하세요.',

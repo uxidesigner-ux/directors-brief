@@ -124,6 +124,7 @@
     L.push('', '## 산출물');
     p.output.forEach(function (o) { L.push('- ' + fill(o, p)); });
     if (p.p === 'convert' && (p.out === 'code' || p.t === 'landing')) L.push('- 주요 버튼의 이벤트 이름(data-event)과, 이 화면 다음에 이어질 수익 행동 1개');
+    if (p.p === 'content' && p.out !== 'code' && ['social','motion','poster'].indexOf(p.t) > -1) L.push('- 이 콘텐츠를 본 사람이 할 다음 행동 1개(앱 설치, 알림 켜기, 구독 등)와 그 행동을 잴 지표, 연결 방법(링크·UTM 등)');
     if (coreMaker) L.push('- 맨 끝에 "브랜드 코어" 4줄: 핵심 개념 / 확정한 태그라인 1개 / 시각 모티프 1개와 쓰는 법 / 확정한 기준(주 행동 색을 포함한 색 역할과 값, 서체, 문구·알림 같은 서비스 행동). 글자 크기·간격 같은 화면 수치는 넣지 마세요. 그건 타이포·컬러 프롬프트가 화면 위계를 보고 정합니다. 다음 프롬프트의 브리프에 그대로 붙여 넣을 수 있게 쓰세요.');
     if (state.principles) {
       L.push('', '## 디렉팅 원칙');
