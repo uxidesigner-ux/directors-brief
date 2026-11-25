@@ -92,6 +92,15 @@
       return out + (r.v ? particle(r.v, cls) : PFORM[cls][2]);
     });
   }
+  // 장르가 분명한 과제는 장르 기준, 나머지는 브리프의 톤으로 고른다. 기본은 차분한 금융형
+  function pickRef(p) {
+    if (['072', '076', '084', '068'].indexOf(p.id) > -1) return 'editorial';
+    if (['024', '030', '034', '060', '070'].indexOf(p.id) > -1) return 'lively';
+    var tone = String(state.brief.tone || '');
+    if (/활기|경쾌|유쾌|발랄|에너지|재미|신나/.test(tone)) return 'lively';
+    if (/감성|우아|매거진|에디토리얼|문학|고급|잔잔/.test(tone)) return 'editorial';
+    return 'calm';
+  }
   function compose(p) {
     var L = ['당신은 ' + p.role + '입니다.', '', '## 프로젝트 맥락'];
     // 브랜드 코어는 선택 칸: 있으면 바꾸지 않고 이어 쓰고, 비어 있으면 전략 프롬프트만 이 과제에서 정한다
@@ -121,7 +130,7 @@
       DB.principles.forEach(function (x) { if (x.when(p)) L.push('- ' + x.line); });
       if (p.out === 'image') L.push('- ' + DB.imageRule);
     }
-    if (p.out === 'code' && p.p !== 'brand' && ['044', '053', '063', '091'].indexOf(p.id) < 0) L.push('', DB.visualRef);
+    if (p.out === 'code' && p.p !== 'brand' && ['044', '053', '063', '091'].indexOf(p.id) < 0) L.push('', DB.visualRefs[pickRef(p)]);
     L.push('', '## 출력 전 자기 검수', '아래 기준으로 결과물을 스스로 점검하고, 통과하지 못한 부분은 고친 결과만 출력하세요. 검수 결과표는 따로 쓰지 마세요.');
     p.checks.forEach(function (c) { L.push('- ' + fill(c, p)); });
     if (p.out === 'code') L.push('- 그대로 열었을 때 깨지지 않는가: 가려짐·잘림·두 줄로 깨진 버튼 없음, 390px 정상, [hidden] 유지, 누를 요소 44px 이상, 본문 15px 이상, 한글 keep-all');
