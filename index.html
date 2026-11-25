@@ -406,6 +406,16 @@
     </footer>
   </section>
 
+  <!-- 저장 공간 부족 알림 -->
+  <section class="save-warn" id="saveWarn" role="alert" hidden>
+    <p class="save-warn__msg" id="saveWarnMsg"></p>
+    <div class="save-warn__acts">
+      <button class="btn btn--ink" type="button" id="saveRetry">다시 시도</button>
+      <button class="btn btn--paper" type="button" id="saveBackup">백업 받기</button>
+      <button class="link-btn" type="button" id="saveWarnClose">닫기</button>
+    </div>
+  </section>
+
   <!-- 빈칸 확인 -->
   <div class="confirm-scrim" id="confirmScrim" hidden></div>
   <section class="confirm" id="confirm" role="alertdialog" aria-modal="true" aria-labelledby="cfTitle" aria-describedby="cfLead" hidden>

@@ -670,3 +670,9 @@ html.vt-on .top { view-transition-name: top; }
 .legacy-note { margin-bottom: 12px; padding: 14px; border-radius: var(--r-ctl); background: var(--accent-soft); font-size: var(--t-14); color: var(--ink); word-break: keep-all; }
 .legacy-note p { margin: 0 0 10px; }
 .legacy-note .btn { width: 100%; min-height: 44px; }
+
+/* 저장 공간 부족 알림 */
+.save-warn { position: fixed; z-index: 62; left: 50%; top: max(12px, env(safe-area-inset-top)); width: min(calc(100vw - 24px), 520px); padding: 16px; border-radius: var(--r-sheet); background: var(--surface); color: var(--ink); box-shadow: var(--shadow-float); transform: translateX(-50%); }
+.save-warn__msg { margin: 0 0 12px; font-size: var(--t-14); line-height: 1.5; word-break: keep-all; }
+.save-warn__acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.save-warn__acts .btn { min-height: 44px; }
