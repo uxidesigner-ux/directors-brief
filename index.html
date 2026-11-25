@@ -230,6 +230,12 @@
         <div class="fields" id="dInputs"></div>
       </section>
 
+      <section class="block" id="dDecWrap" hidden>
+        <h3 class="block__title">확정한 결정</h3>
+        <p class="block__hint">여기 저장한 값은 이 결정이 필요한 다른 작업의 프롬프트에도 그대로 들어가고, 기본 원칙보다 우선해요.</p>
+        <div class="fields" id="dDecs"></div>
+      </section>
+
       <section class="block">
         <div class="block__row">
           <h3 class="block__title">복사될 프롬프트</h3>
@@ -397,6 +403,19 @@
       <button class="btn btn--paper" type="button" id="briefClear">모두 지우기</button>
       <button class="btn btn--ink btn--grow" type="button" data-close>확인</button>
     </footer>
+  </section>
+
+  <!-- 빈칸 확인 -->
+  <div class="confirm-scrim" id="confirmScrim" hidden></div>
+  <section class="confirm" id="confirm" role="alertdialog" aria-modal="true" aria-labelledby="cfTitle" aria-describedby="cfLead" hidden>
+    <h2 class="confirm__title" id="cfTitle"></h2>
+    <p class="confirm__lead" id="cfLead"></p>
+    <ul class="confirm__list" id="cfList"></ul>
+    <div class="confirm__acts">
+      <button class="btn btn--ink" type="button" id="cfFill">입력하고 복사</button>
+      <button class="btn btn--paper" type="button" id="cfBlank">빈칸으로 복사</button>
+      <button class="link-btn confirm__cancel" type="button" id="cfCancel">취소</button>
+    </div>
   </section>
 
   <div class="toast" id="toast" role="status" aria-live="polite">

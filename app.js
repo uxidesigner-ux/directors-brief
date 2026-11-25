@@ -19,11 +19,12 @@
     recent: store.get('recent', []),
     searches: store.get('searches', []),
     courses: store.get('courses', {}),
+    copyLog: store.get('copylog', {}),
     mode: store.get('mode', 'explore'),
     principles: store.get('principles', true),
     f: { p: 'all', types: new Set(), outs: new Set() },
     draft: { types: new Set(), outs: new Set() },
-    openId: null, courseId: null, bIdx: 0, lib: 'fav'
+    openId: null, courseId: null, drawerCourse: null, bIdx: 0, lib: 'fav'
   };
 
   var purposeById = {}, ctxByKey = {}, byId = {}, courseById = {};
@@ -109,18 +110,43 @@
     if (/감성|우아|매거진|에디토리얼|문학|고급|잔잔/.test(tone)) return 'editorial';
     return 'calm';
   }
+  /* ---------- 확정한 결정: 앞 단계에서 사용자가 정한 값을 필요한 작업에만 넘긴다 ---------- */
+  var DEC_KEYS = DB.ctx.filter(function (c) { return c.dec; }).map(function (c) { return c.k; });
+  var VISUAL_REVIEW = ['087', '088', '090', '091', '092', '093', '096', '097', '098'];
+  var FLOW_REVIEW = ['087', '088', '096', '098'];
+  // 이 작업이 따라야 할 결정
+  function decUse(p) {
+    var u = [];
+    if (p.ctx.indexOf('core') > -1) u.push('core');
+    if ((p.out === 'code' && p.p !== 'persuade') || p.id === '045' || p.id === '055' || VISUAL_REVIEW.indexOf(p.id) > -1) u.push('visual');
+    if ((p.p === 'product' && p.t === 'app') || FLOW_REVIEW.indexOf(p.id) > -1) u.push('flow');
+    if (p.p === 'persuade' && ['077', '079'].indexOf(p.id) < 0) u.push('goal');
+    if ((p.p === 'content' && ['social', 'motion', 'poster'].indexOf(p.t) > -1) || (p.p === 'convert' && ['ad', 'crm', 'poster'].indexOf(p.t) > -1)) u.push('launch');
+    return u;
+  }
+  // 이 작업의 결과에서 정해지는 결정 (결과 맨 끝에 붙여 넣기 좋은 블록을 요청한다)
+  var DEC_MAKE = {
+    visual: '이미 정한 값은 그대로 두고, 주 행동 색·글자 크기·간격·모서리·터치 높이 기준을 토큰 이름과 값으로',
+    flow: '정상 경로 1줄과 예외 경로 1줄(무엇이 막히고, 무엇을 유지하고, 사용자가 무엇을 골라 다시 확정하는지)',
+    launch: '발행 채널, 날짜·시간, 정원, 참가비·가격, 신청 경로(같은 링크 하나)'
+  };
+  function decMake(p) { return DB.ctx.filter(function (c) { return c.dec && c.from === p.id && DEC_MAKE[c.k]; }).map(function (c) { return c.k; }); }
+  function decFilled(p) { return decUse(p).filter(function (k) { return val(state.brief[k]); }); }
+
   function compose(p) {
     var L = ['당신은 ' + p.role + '입니다.', '', '## 프로젝트 맥락'];
     // 브랜드 코어는 선택 칸: 있으면 바꾸지 않고 이어 쓰고, 비어 있으면 전략 프롬프트만 이 과제에서 정한다
     var hasCore = p.ctx.indexOf('core') > -1, coreSet = hasCore && val(state.brief.core), coreMaker = hasCore && !coreSet && p.t === 'strategy';
     p.ctx.forEach(function (k) {
-      if (k === 'core') {
-        if (coreSet) L.push('- 브랜드 코어: ' + mark(resolve(k, p)) + ' (이미 정한 결정입니다. 바꾸지 말고 이어서 쓰되, 코어의 수치를 다시 나열하지 말고 "코어 기준"이라고만 적으세요)');
-        else if (coreMaker) L.push('- 브랜드 코어: 아직 정하지 않음. 이 과제의 결론으로 정하세요');
-        return;
-      }
+      if (ctxByKey[k].dec) { if (k === 'core' && coreMaker) L.push('- 브랜드 코어: 아직 정하지 않음. 이 과제의 결론으로 정하세요'); return; }
       L.push('- ' + ctxByKey[k].label + ': ' + mark(resolve(k, p)));
     });
+    var decs = decFilled(p);
+    if (decs.length) {
+      L.push('', '## 확정한 결정 (사용자가 정한 값, 가장 우선)');
+      decs.forEach(function (k) { L.push('- ' + ctxByKey[k].label + ': ' + mark(resolve(k, p))); });
+      L.push('- 위 값은 사용자가 이미 확정했습니다. 아래 디렉팅 원칙, 시각 기준의 예시 값, 기본 수치(예: 터치 44px)와 다르면 위 값을 따르세요. 바꾸지 말고 그대로 쓰고, 꼭 바꿔야 한다면 본문과 섞지 말고 이유와 함께 따로 제안하세요.');
+    }
     L.push('', '## 과제', fill(p.task, p), '', '## 진행 방식');
     var n = 0;
     if (p.p === 'content' && p.out !== 'code' && ['social', 'motion', 'poster'].indexOf(p.t) > -1) L.push((++n) + '. 보는 사람이 지금 느끼는 감정(불안, 귀찮음, 의심 등) 1개와 다 본 뒤 느껴야 할 감정 1개를 정하세요. 장면과 문구는 그 감정의 변화를 보여 주는 데 쓰세요.');
@@ -134,6 +160,8 @@
     p.output.forEach(function (o) { L.push('- ' + fill(o, p)); });
     if (p.p === 'convert' && (p.out === 'code' || p.t === 'landing')) L.push('- 주요 버튼의 이벤트 이름(data-event)과, 이 화면 다음에 이어질 수익 행동 1개');
     if (p.p === 'content' && p.out !== 'code' && ['social','motion','poster'].indexOf(p.t) > -1) L.push('- 이 콘텐츠를 본 사람이 할 다음 행동 1개(앱 설치, 알림 켜기, 구독 등)와 그 행동을 잴 지표, 연결 방법(링크·UTM 등)');
+    if (decs.indexOf('flow') > -1 && p.out === 'code') L.push('- 확정한 화면 흐름의 정상·예외 경로를 실제로 눌러 이동해 볼 수 있게');
+    decMake(p).forEach(function (k) { L.push('- 맨 끝에 "확정 결정 · ' + ctxByKey[k].label + '" 3~6줄: ' + DEC_MAKE[k] + '. 다음 작업의 같은 이름 칸에 그대로 붙여 넣을 수 있게 쓰세요'); });
     if (coreMaker) L.push('- 맨 끝에 "브랜드 코어" 4줄: 핵심 개념 / 확정한 태그라인 1개 / 시각 모티프 1개와 쓰는 법 / 확정한 기준(주 행동 색을 포함한 색 역할과 값, 서체, 문구·알림 같은 서비스 행동). 글자 크기·간격 같은 화면 수치는 넣지 마세요. 그건 타이포·컬러 프롬프트가 화면 위계를 보고 정합니다. 다음 프롬프트의 브리프에 그대로 붙여 넣을 수 있게 쓰세요.');
     if (state.principles) {
       L.push('', '## 디렉팅 원칙');
@@ -144,7 +172,9 @@
     L.push('', '## 출력 전 자기 검수', '아래 기준으로 결과물을 스스로 점검하고, 통과하지 못한 부분은 고친 결과만 출력하세요. 검수 결과표는 따로 쓰지 마세요.');
     p.checks.forEach(function (c) { L.push('- ' + fill(c, p)); });
     if (p.out === 'code') L.push('- 그대로 열었을 때 깨지지 않는가: 가려짐·잘림·두 줄로 깨진 버튼 없음, 390px 정상, [hidden] 유지, 누를 요소 44px 이상, 본문 15px 이상, 한글 keep-all');
-    if (coreSet) L.push('- 브랜드 코어(핵심 개념·태그라인·모티프·수치)와 어긋나는 결정이 없는가. 바꿔야 한다면(예: 사용자가 이미 알아보는 기존 자산과 부딪힐 때) 본문과 섞지 말고 이유와 함께 따로 제안할 것');
+    if (decs.length) L.push('- 확정한 결정의 값(색·수치·경로·요청·일정·가격·링크)이 결과물 곳곳에 바뀌지 않고 같은 값으로 쓰였는가');
+    if (decs.indexOf('goal') > -1) L.push('- 문서가 확정한 합의 하나를 요청하는 문장으로 끝나는가');
+    if (coreSet) L.push('- 브랜드 코어(핵심 개념·태그라인·모티프)와 어긋나는 결정이 없는가. 바꿔야 한다면(예: 사용자가 이미 알아보는 기존 자산과 부딪힐 때) 본문과 섞지 말고 이유와 함께 따로 제안할 것');
     if (DB.scoreWhen(p)) L.push(DB.scoreLine);
     L.push('', '## 사실과 가정');
     L.push('- 프로젝트 맥락에 적힌 사실(수익 모델, 현재 상태, 숫자)은 바꾸거나 다른 가정으로 대신하지 마세요.');
@@ -196,8 +226,8 @@
       var done = courseDone(c), total = c.steps.length;
       return '<button class="course" type="button" data-course="' + c.id + '" style="--i:' + i + '">' +
         '<span class="course__n"><svg viewBox="0 0 44 44" aria-hidden="true"><circle class="bg" cx="22" cy="22" r="20"/><circle class="fg" cx="22" cy="22" r="20" stroke-dasharray="' + C + '" stroke-dashoffset="' + (C * (1 - done / total)).toFixed(1) + '"/></svg>' + total + '</span>' +
-        '<span class="course__body"><span class="course__title">' + esc(c.title) + '</span><span class="course__who">' + (done ? done + '/' + total + '단계 진행 중' : esc(c.who)) + '</span></span>' +
-        I.chev + '<span class="sr">' + total + '단계 중 ' + done + '단계 완료</span></button>';
+        '<span class="course__body"><span class="course__title">' + esc(c.title) + '</span><span class="course__who">' + (done ? total + '단계 중 ' + done + '개 복사' : esc(c.who)) + '</span></span>' +
+        I.chev + '<span class="sr">' + (done ? '' : total + '단계 중 0개 복사') + '</span></button>';
     }).join('');
   }
 
@@ -381,6 +411,7 @@
       if (!ok) { toast('복사하지 못했어요', '프롬프트를 길게 눌러 직접 복사해 주세요.'); if (!state.openId) openPrompt(id, true); return false; }
       haptic();
       state.copied.add(id); store.set('copied', Array.from(state.copied));
+      state.copyLog[id] = hashText(plain(composed)); store.set('copylog', state.copyLog);
       state.recent = [id].concat(state.recent.filter(function (x) { return x !== id; })).slice(0, 8); store.set('recent', state.recent);
       flashCopy(id);
       var card = $('.card[data-id="' + id + '"]');
@@ -390,6 +421,74 @@
       return true;
     });
   }
+  function hashText(t) { var h = 5381; for (var i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return String(h >>> 0); }
+  // 이전에 복사한 원문과 지금 원문이 다르면(앞 단계 결정이 바뀌었으면) 다시 복사할 필요가 있다
+  function isStale(id) { var h = state.copyLog[id]; return h != null && h !== hashText(plain(compose(byId[id]))); }
+
+  /* ---------- 복사 전 빈칸 확인 ---------- */
+  function missingFor(p) {
+    var out = [];
+    (p.in || []).forEach(function (i) {
+      if (i.opt || val((state.inputs[p.id] || {})[i.k])) return;
+      out.push({ kind: 'in', k: i.k, label: i.l, why: '이번 작업의 재료예요. 비어 있으면 AI가 내용을 지어내거나 되물어서 결과를 그대로 쓰기 어려워요.' });
+    });
+    p.ctx.forEach(function (k) {
+      var c = ctxByKey[k]; if (c.optional || val(state.brief[k])) return;
+      out.push({ kind: 'brief', k: k, label: c.label, why: '[' + c.ph + '] 빈칸으로 남아요. AI가 일반적인 예로 채워 내 서비스와 다른 답이 나올 수 있어요.' });
+    });
+    return out;
+  }
+  var pending = null, confirmReturn = null;
+  // 모든 복사 버튼이 거치는 길: 빈칸 확인 → 복사 → (코스에서 왔으면) 그 코스 기록
+  function requestCopy(id, o) {
+    o = o || {};
+    var miss = missingFor(byId[id]);
+    if (!miss.length) return doCopy(id, o);
+    pending = { id: id, o: o, miss: miss };
+    showConfirm();
+    return Promise.resolve(false);
+  }
+  function doCopy(id, o) {
+    return copyPrompt(id, !!o.course).then(function (ok) {
+      if (ok && o.course) recordStep(o.course, id);
+      if (o.after) o.after(ok);
+      return ok;
+    });
+  }
+  function showConfirm() {
+    var p = byId[pending.id], m = pending.miss;
+    confirmReturn = document.activeElement;
+    $('#cfTitle').textContent = p.id + ' 프롬프트에 빈칸 ' + m.length + '개가 있어요';
+    $('#cfLead').textContent = '지금 복사하면 아래 칸이 [ ]로 남아요. 결과에 미치는 영향을 확인하고 골라 주세요.';
+    $('#cfList').innerHTML = m.map(function (x) { return '<li><b>' + esc(x.label) + '</b>' + esc(x.why) + '</li>'; }).join('');
+    $('#confirmScrim').hidden = false; $('#confirm').hidden = false;
+    $('#cfFill').focus();
+  }
+  function hideConfirm() {
+    $('#confirmScrim').hidden = true; $('#confirm').hidden = true;
+    var r = confirmReturn; pending = null; confirmReturn = null;
+    if (r && r.focus && document.contains(r)) r.focus({ preventScroll: true });
+  }
+  function fillFirst(pd) {
+    var first = pd.miss[0];
+    if (state.openId !== pd.id || !isOpen('drawer')) openPrompt(pd.id, true, pd.o.course || null);
+    else if (pd.o.course) state.drawerCourse = pd.o.course;
+    if (first.kind === 'in') {
+      setTimeout(function () { var t = $('#in-' + pd.id + '-' + first.k); if (t) { t.scrollIntoView({ block: 'center' }); t.focus({ preventScroll: true }); } }, 420);
+      toast('빈칸을 채운 뒤 "프롬프트 복사"를 누르세요', first.label);
+    } else openBrief(first.k);
+  }
+  function recordStep(cid, id) {
+    var c = courseById[cid]; if (!c) return;
+    var idx = c.steps.map(function (s) { return s.id; }).indexOf(id); if (idx < 0) return;
+    var d = state.courses[cid] || [], fresh = d.indexOf(id) < 0;
+    if (fresh) d.push(id);
+    state.courses[cid] = d; store.set('courses', state.courses);
+    renderCourses(); if (isOpen('courseSheet') && state.courseId === cid) renderCourse();
+    var done = courseDone(c), total = c.steps.length, prog = total + '단계 중 ' + done + '개 복사';
+    toast((idx + 1) + '단계 복사했어요', fresh ? prog + (done === total ? '. 결과를 같은 대화에서 다듬어 보세요.' : (idx === 0 ? '. 새 대화에 붙여넣으세요.' : '. 같은 대화에 이어서 붙여넣으세요.')) : '다시 복사했어요. 진행 기록은 그대로예요 (' + prog + ').');
+  }
+
   function renderLibCount(bump) {
     var n = state.fav.size, el = $('#libCount');
     el.hidden = !n; el.textContent = n;
@@ -520,7 +619,9 @@
       return;
     }
     var res = searchPrompts(q);
-    $('#sCount').textContent = res.length ? '"' + q + '" 결과 ' + res.length + '개' : '"' + q + '"에 맞는 프롬프트가 없어요. 아래 말로 찾아보세요.';
+    $('#sCount').textContent = res.length
+      ? '"' + q + '" 결과 ' + res.length + '개' + (res.loose && res.loose.length ? ' · "' + res.loose.join(', ') + '"은(는) 업종·상황으로 보고 작업 말로 찾았어요' : '')
+      : '"' + q + '"에 맞는 프롬프트가 없어요. 아래 말로 찾아보세요.';
     $('#sList').innerHTML = res.length
       ? res.map(function (r, i) { return rowHTML(r.p.id, i, r); }).join('')
       : '<li class="search__chips search__chips--empty">' + SUGGEST.map(function (s) { return '<button class="schip" type="button" data-q="' + esc(s) + '">' + esc(s) + '</button>'; }).join('') + '</li>';
@@ -537,8 +638,29 @@
     '그래프': ['차트'], '보고서': ['보고'], '검수': ['점검', '감사', '리뷰'], '감사': ['감사', '점검'], '리뷰': ['리뷰', '크리틱', '점검'],
     '캐릭터': ['마스코트'], '결제': ['결제', '페이월', '가격'], '가격': ['가격', '요금제'], '요금': ['요금제', '가격'], '구독': ['페이월', '요금제', '구독'],
     '전단': ['홍보물', '전단'], '메뉴판': ['홍보물'], '앱': ['앱'], '화면': ['화면'], '설문': ['사용자 테스트'], '테스트': ['테스트', '사용자 테스트'],
-    '출시': ['출시', '런칭'], '런칭': ['출시'], '주식': ['트레이딩', '투자'], '코인': ['트레이딩'], '여행': ['여행']
+    '출시': ['출시', '런칭'], '런칭': ['출시'], '주식': ['트레이딩', '투자'], '코인': ['트레이딩'], '여행': ['여행'],
+    // 사용자가 자기 업무를 말하는 표현
+    '이름짓기': ['네이밍'], '상호': ['네이밍'], '가게이름': ['네이밍'], '오류': ['오류', '상태'], '실패': ['오류', '상태'], '버그': ['오류', '상태'], '안내문': ['문구', '라이팅'],
+    '모집': ['카드뉴스', 'sns', '홍보물'], '홍보': ['카드뉴스', 'sns', '홍보물', '광고'], '공지': ['카드뉴스', 'sns'], '게시물': ['카드뉴스', 'sns'], '피드': ['sns', '카드뉴스'], '캡션': ['카드뉴스', 'sns'],
+    '흐름': ['흐름'], '플로우': ['흐름'], '동선': ['흐름'], '토큰': ['토큰'], '디자인시스템': ['토큰', '디자인 시스템'], '시안': ['화면', '점검'], '품질': ['점검', '품질'],
+    '제안서': ['제안서'], '투자자': ['피치덱', '투자'], '심사역': ['피치덱', '투자'], '미팅': ['제안서', '피치덱']
   };
+  // 조사·어미를 떼어 낸 말도 함께 찾는다 (예: 카드뉴스를 → 카드뉴스, 이름짓기 → 이름)
+  var TAIL = /(으로|에서|에게|부터|까지|하기|만들기|짓기|을|를|이|가|은|는|의|에|도|로|용)$/;
+  function stems(w) {
+    var out = [w], t = w;
+    for (var i = 0; i < 2; i++) { var n = t.replace(TAIL, ''); if (n === t || n.length < 2) break; t = n; out.push(t); }
+    return out;
+  }
+  // 띄어쓰기 없이 붙여 쓴 말(예: 예약오류) 속에서 아는 낱말을 찾는다
+  var VOCAB = (function () {
+    var set = {};
+    Object.keys(ALIAS).forEach(function (k) { if (k.length > 1) set[k] = 1; });
+    PROMPTS.forEach(function (p) { (p.title + ' ' + DB.types[p.t]).toLowerCase().split(/[^가-힣a-z0-9]+/).forEach(function (w) { if (w.length > 1) set[w] = 1; }); });
+    return Object.keys(set).sort(function (a, b) { return b.length - a.length; });
+  })();
+  // 무엇을 하든 붙는 말은 찾는 데 쓰지 않는다
+  var STOP = ['만들기', '만들어', '만들어줘', '만들고', '하기', '해줘', '하고', '싶어', '싶다', '위한', '관련', '용', '좀', '어떻게', '프롬프트'];
   var CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
   function initials(s) {
     return String(s).split('').map(function (ch) {
@@ -590,12 +712,23 @@
       }).filter(function (r) { return r.score; }).sort(function (a, b) { return b.score - a.score || a.p.id.localeCompare(b.p.id); });
     }
     var words = raw.split(/\s+/).filter(Boolean), out = [];
+    var kept = words.filter(function (w) { return STOP.indexOf(w) < 0; });
+    if (kept.length) words = kept;
+    // 낱말마다 찾을 후보: 원래 말 → 조사 뗀 말 → 같은 뜻 → 붙여 쓴 말 속 낱말
+    var cand = words.map(function (w) {
+      var list = [], add = function (t, m) { if (t && !list.some(function (x) { return x.t === t; })) list.push({ t: t, m: m }); };
+      stems(w).forEach(function (st, si) { add(st, si ? 0.95 : 1); (ALIAS[st] || []).forEach(function (a) { add(a, w.length === 1 ? 1 : 0.8); }); });
+      var direct = PROMPTS.some(function (p) { return list.some(function (c) { return Object.keys(W).some(function (f) { return findTerm(p._f[f], c.t) > -1; }); }); });
+      if (!direct && w.length >= 3) VOCAB.forEach(function (v) { if (w !== v && w.indexOf(v) > -1) { add(v, 0.7); (ALIAS[v] || []).forEach(function (a) { add(a, 0.6); }); } });
+      return list;
+    });
     PROMPTS.forEach(function (p) {
-      if (words.length === 1 && /^\d{1,3}$/.test(words[0]) && p.id === words[0].padStart(3, '0')) { out.push({ p: p, score: 1000, terms: [], ctx: '' }); return; }
-      var total = 0, terms = [], where = null, ok = words.every(function (w) {
-        var cands = [w].concat(ALIAS[w] || []), best = 0, bestF = null, bestT = null, perField = {};
-        cands.forEach(function (t, ci) {
-          var m = ci === 0 ? 1 : (w.length === 1 ? 1 : 0.8);
+      if (words.length === 1 && /^\d{1,3}$/.test(words[0]) && p.id === words[0].padStart(3, '0')) { out.push({ p: p, score: 1000, terms: [], ctx: '', missed: 0 }); return; }
+      var total = 0, terms = [], where = null, missed = 0;
+      words.forEach(function (w, wi) {
+        var best = 0, bestF = null, bestT = null, perField = {};
+        cand[wi].forEach(function (c) {
+          var t = c.t, m = c.m;
           Object.keys(W).forEach(function (f) {
             var at = findTerm(p._f[f], t); if (at < 0) return;
             var sc = W[f] * m + (f === 'title' && at === 0 && t.length > 1 ? 20 : 0);
@@ -603,23 +736,28 @@
             if (sc > best) { best = sc; bestF = f; bestT = t; }
           });
         });
-        if (!best) return false;
+        if (!best) { missed++; return; }
         // 가장 잘 맞는 곳 + 다른 곳에서도 맞으면 조금 더
         var rest = Object.keys(perField).reduce(function (s, f) { return s + perField[f]; }, 0) - best;
         total += best + rest * 0.25; terms.push(bestT);
         if (!where || W[bestF] > W[where.f]) where = { f: bestF, t: bestT };
-        return true;
       });
-      if (!ok) return;
+      // 업종·상황을 뜻하는 말(공방, 예약, 북클럽)은 프롬프트에 없어도 된다. 단, 작업을 뜻하는 말 하나는 맞아야 한다
+      if (missed === words.length) return;
+      if (missed) total *= 0.6;
       var ctx = '';
       if (where && where.f !== 'title') {
         var label = { type: '유형', purpose: '하려는 일', task: '과제', role: '역할', out: '받는 것' }[where.f];
         var src = { type: DB.types[p.t], purpose: purposeById[p.p].label + ' (' + purposeById[p.p].ex + ')', task: plain(fill(p.task, p)), role: p.role, out: p.output.map(function (o) { return plain(fill(o, p)); }).join(' / ') }[where.f];
         ctx = label + ': ' + snippet(src, where.t);
       }
-      out.push({ p: p, score: total, terms: terms, ctx: ctx });
+      out.push({ p: p, score: total, terms: terms, ctx: ctx, missed: missed });
     });
-    return out.sort(function (a, b) { return b.score - a.score || a.p.id.localeCompare(b.p.id); });
+    out.sort(function (a, b) { return a.missed - b.missed || b.score - a.score || a.p.id.localeCompare(b.p.id); });
+    // 모든 말이 맞는 결과가 있으면 그것만, 없으면 일부만 맞는 결과를 보여 준다
+    if (out.length && !out[0].missed) out = out.filter(function (r) { return !r.missed; });
+    else if (out.length) out.loose = words.filter(function (w, wi) { return !out.some(function (r) { return r.terms.some(function (t) { return cand[wi].some(function (c) { return c.t === t; }); }); }); });
+    return out;
   }
 
   /* ---------- 필터 시트 ---------- */
@@ -673,42 +811,31 @@
   function renderCourse() {
     var c = courseById[state.courseId]; if (!c) return;
     var doneIds = state.courses[c.id] || [], done = courseDone(c), total = c.steps.length;
-    var nextIdx = -1;
+    var nextIdx = -1, staleIdx = -1;
     c.steps.some(function (s, i) { if (doneIds.indexOf(s.id) < 0) { nextIdx = i; return true; } return false; });
+    c.steps.some(function (s, i) { if (doneIds.indexOf(s.id) > -1 && isStale(s.id)) { staleIdx = i; return true; } return false; });
     $('#cMeta').innerHTML = '<span class="tag">코스</span><span class="tag">' + total + '단계</span>';
     $('#cTitle').textContent = c.title;
     $('#cWho').textContent = c.who + '에게. ' + c.result + ' 순서대로 받아요.';
     $('#cBar').style.width = (done / total * 100) + '%';
-    $('#cProg').textContent = done + ' / ' + total;
+    $('#cProg').textContent = total + '단계 중 ' + done + '개 복사';
     $('#cSteps').innerHTML = c.steps.map(function (s, i) {
-      var p = byId[s.id], isDone = doneIds.indexOf(s.id) > -1;
+      var p = byId[s.id], isDone = doneIds.indexOf(s.id) > -1, st = isDone && isStale(s.id);
       return '<li class="step' + (isDone ? ' is-done' : '') + (i === nextIdx ? ' is-next' : '') + '">' +
         '<span class="step__n">' + (i + 1) + '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' +
-        '<div class="step__body"><button class="step__title" type="button" data-open="' + s.id + '">' + esc(p.title) + '</button><p class="step__note">' + esc(s.note) + '</p></div>' +
+        '<div class="step__body"><button class="step__title" type="button" data-open="' + s.id + '">' + esc(p.title) + '</button><p class="step__note">' + esc(s.note) + '</p>' + (st ? '<span class="step__stale">결정이 바뀌었어요 · 다시 복사</span>' : '') + '</div>' +
         copyBtn(s.id, (i + 1) + '단계 프롬프트 복사') + '<span class="sr">' + (isDone ? '완료' : '') + '</span></li>';
     }).join('');
-    $('#cNext').textContent = nextIdx > -1 ? (nextIdx + 1) + '단계 복사' : '모든 단계를 마쳤어요';
-    $('#cNext').disabled = nextIdx < 0;
+    $('#cNext').textContent = nextIdx > -1 ? (nextIdx + 1) + '단계 복사' : (staleIdx > -1 ? (staleIdx + 1) + '단계 다시 복사' : '모든 단계를 복사했어요');
+    $('#cNext').disabled = nextIdx < 0 && staleIdx < 0;
     $('#cReset').hidden = !done;
   }
-  function copyCourseStep(id) {
-    var c = courseById[state.courseId], idx = c.steps.map(function (s) { return s.id; }).indexOf(id);
-    copyPrompt(id, true).then(function (ok) {
-      if (!ok) return;
-      var d = state.courses[c.id] || [];
-      if (d.indexOf(id) < 0) d.push(id);
-      state.courses[c.id] = d; store.set('courses', state.courses);
-      renderCourse(); renderCourses();
-      var last = courseDone(c) === c.steps.length;
-      toast((idx + 1) + '단계 복사했어요', last ? '코스를 모두 마쳤어요. 결과를 같은 대화에서 다듬어 보세요.' : (idx === 0 ? '새 대화에 붙여넣고, 결과가 나오면 다음 단계로 가요.' : '같은 대화에 이어서 붙여넣으세요.'));
-    });
-  }
-
   /* ---------- 프롬프트 상세 ---------- */
-  function openPrompt(id, push) {
+  function openPrompt(id, push, course) {
     if (!byId[id]) return;
     var fresh = state.openId !== id;
     state.openId = id;
+    state.drawerCourse = course && courseById[course] && courseById[course].steps.some(function (s) { return s.id === id; }) ? course : null;
     renderDrawer(true);
     if (fresh) $('#dBody').scrollTop = 0;
     if (!isOpen('drawer')) showSheet($('#drawer'), push, '#' + id);
@@ -747,7 +874,7 @@
     $('#dBrief').innerHTML = '<p class="brief-row__text"><b>' + (all ? '브리프 정보가 모두 들어가요' : '브리프 ' + used.length + '칸 중 ' + filled.length + '칸이 채워져 있어요') + '</b>' +
       (all ? '내 브리프에서 ' + used.length + '칸을 가져왔어요.' : '비어 있는 칸은 [ ]로 남아요.') + '</p>' +
       '<button class="btn btn--ink brief-row__btn" type="button" id="dEditBrief">' + (all ? '고치기' : '채우기') + '</button>';
-    $('#dCtxList').innerHTML = p.ctx.map(function (k) {
+    $('#dCtxList').innerHTML = p.ctx.filter(function (k) { return !ctxByKey[k].dec; }).map(function (k) {
       var v = val(state.brief[k]);
       return '<span class="ctx' + (v ? ' ctx--full' : '') + '" title="' + esc(v || '비어 있음') + '">' + (v ? I.tick : '') + esc(ctxByKey[k].label) + '</span>';
     }).join('');
@@ -776,7 +903,23 @@
       setFold(false, true);
       $('#dDisc').setAttribute('aria-expanded', 'false'); $('#dDiscPanel').classList.remove('is-open');
     }
+    if (full) renderDecs(p);
     renderBriefRow(p); syncOpts(); renderPreview();
+  }
+  function renderDecs(p) {
+    var use = decUse(p), make = decMake(p), makesCore = p.t === 'strategy' && use.indexOf('core') > -1;
+    var keys = use.concat(make.filter(function (k) { return use.indexOf(k) < 0; }));
+    $('#dDecWrap').hidden = !keys.length;
+    $('#dDecs').innerHTML = keys.map(function (k) {
+      var c = ctxByKey[k], v = state.brief[k] || '', fid = 'dec-' + k;
+      var mk = make.indexOf(k) > -1 || (k === 'core' && makesCore);
+      var help = mk
+        ? '이 작업 결과 맨 끝의 "' + (k === 'core' ? '브랜드 코어' : '확정 결정 · ' + c.label) + '" 중 확정한 줄만 붙여 넣으세요.' + (use.indexOf(k) > -1 ? ' 이미 정한 값이 있으면 이 작업도 그 값을 따라요.' : '')
+        : '이 작업이 따르는 결정이에요. 비워 두면 넣지 않아요.';
+      return '<div class="field"><div class="field__head"><label class="field__label" for="' + fid + '">' + esc(c.label) + '</label></div>' +
+        '<textarea class="field__input" id="' + fid + '" data-dec="' + k + '" rows="2" placeholder="' + esc(c.hint) + '">' + esc(v) + '</textarea>' +
+        '<p class="field__help">' + esc(help) + '</p></div>';
+    }).join('');
   }
 
   /* ---------- 내 브리프 ---------- */
@@ -794,31 +937,37 @@
     else showSum();
     showSheet($('#briefDrawer'), true);
   }
+  var STEP_IDX = DB.ctx.map(function (c, i) { return c.dec ? -1 : i; }).filter(function (i) { return i > -1; });
   function showStep(i) {
     state.bIdx = i;
-    var c = DB.ctx[i], total = DB.ctx.length;
+    var c = DB.ctx[i], total = STEP_IDX.length, pos = STEP_IDX.indexOf(i);
     $('#bStep').hidden = false; $('#bSum').hidden = true; $('#bFootStep').hidden = false; $('#bFootSum').hidden = true;
-    $('#bBack').hidden = i === 0;
-    $('#bBar').style.width = ((i + 1) / total * 100) + '%';
-    $('#bCount').textContent = (i + 1) + ' / ' + total;
+    $('#bBack').hidden = i === 0 || !!c.dec;
+    $('#bBar').style.width = (c.dec ? 100 : (pos + 1) / total * 100) + '%';
+    $('#bCount').textContent = c.dec ? '확정한 결정 · 선택' : (pos + 1) + ' / ' + total;
     $('#bQ').textContent = c.q;
     var input = $('#bInput'); input.value = state.brief[c.k] || ''; input.placeholder = c.hint;
-    $('#bHint').textContent = '비워 두고 넘어가도 돼요. 나중에 언제든 고칠 수 있어요.';
-    $('#bNext').textContent = i === total - 1 ? '완료' : '다음';
+    $('#bHint').textContent = c.dec ? '앞 단계 결과에서 확정한 값만 적으세요. 이 결정이 필요한 작업의 프롬프트에 들어가요.' : '비워 두고 넘어가도 돼요. 나중에 언제든 고칠 수 있어요.';
+    $('#bNext').textContent = c.dec ? '저장' : (pos === total - 1 ? '완료' : '다음');
     var step = $('#bStep'); step.classList.remove('is-enter'); void step.offsetWidth; step.classList.add('is-enter');
     setTimeout(function () { input.focus({ preventScroll: true }); autoGrow(input); }, isOpen('briefDrawer') ? 60 : 380);
   }
   function showSum() {
     $('#bStep').hidden = true; $('#bSum').hidden = false; $('#bFootStep').hidden = true; $('#bFootSum').hidden = false; $('#bBack').hidden = true;
-    $('#bList').innerHTML = DB.ctx.map(function (c, i) {
+    var item = function (c) {
       var v = val(state.brief[c.k]);
-      return '<li><button class="qsum__item" type="button" data-i="' + i + '"><span class="qsum__body"><span class="qsum__label">' + esc(c.label) + '</span><span class="qsum__val' + (v ? '' : ' is-empty') + '">' + esc(v || '비어 있음') + '</span></span>' + I.chev + '</button></li>';
-    }).join('');
+      return '<li><button class="qsum__item" type="button" data-i="' + c.i + '"><span class="qsum__body"><span class="qsum__label">' + esc(c.label) + '</span><span class="qsum__val' + (v ? '' : ' is-empty') + '">' + esc(v || '비어 있음') + '</span></span>' + I.chev + '</button></li>';
+    };
+    $('#bList').innerHTML = DB.ctx.filter(function (c) { return !c.dec; }).map(item).join('') +
+      '<li class="qsum__group">확정한 결정 (선택)</li>' + DB.ctx.filter(function (c) { return c.dec; }).map(item).join('');
     syncOpts();
   }
   function stepNext() {
     store.set('brief', state.brief); renderBriefBar();
-    if (state.bIdx < DB.ctx.length - 1) showStep(state.bIdx + 1);
+    if (state.openId && isOpen('drawer')) { renderDecs(byId[state.openId]); renderBriefRow(byId[state.openId]); renderPreview(); }
+    var pos = STEP_IDX.indexOf(state.bIdx);
+    if (DB.ctx[state.bIdx].dec) { showSum(); toast('결정을 저장했어요', '이 결정이 필요한 작업의 프롬프트에 들어가요.'); }
+    else if (pos < STEP_IDX.length - 1) showStep(STEP_IDX[pos + 1]);
     else { showSum(); toast('브리프를 저장했어요', '이제 모든 프롬프트에 들어가요.'); }
   }
   function autoGrow(t) { t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 200) + 'px'; }
@@ -866,13 +1015,13 @@
     var c = e.target.closest('[data-copy]');
     if (c) {
       var id = c.dataset.copy;
-      if (c.closest('#courseSheet')) copyCourseStep(id);
-      else { if (c.closest('#search')) saveSearch($('#sq').value); copyPrompt(id); }
+      if (c.closest('#courseSheet')) requestCopy(id, { course: state.courseId });
+      else { if (c.closest('#search')) saveSearch($('#sq').value); requestCopy(id); }
       return;
     }
     var m = e.target.closest('[data-mark]'); if (m) { toggleFav(m.dataset.mark); return; }
     var o = e.target.closest('[data-open]');
-    if (o) { if (o.closest('#search')) saveSearch($('#sq').value); openPrompt(o.dataset.open, true); return; }
+    if (o) { if (o.closest('#search')) saveSearch($('#sq').value); openPrompt(o.dataset.open, true, o.closest('#courseSheet') ? state.courseId : null); return; }
     var card = e.target.closest('.card'); if (card && !e.target.closest('button:not(.card__open)')) openPrompt(card.dataset.id, true);
   });
   var grid = $('#grid');
@@ -906,8 +1055,8 @@
   // 코스
   $('#cNext').addEventListener('click', function () {
     var c = courseById[state.courseId], d = state.courses[c.id] || [];
-    var next = c.steps.filter(function (s) { return d.indexOf(s.id) < 0; })[0];
-    if (next) copyCourseStep(next.id);
+    var next = c.steps.filter(function (s) { return d.indexOf(s.id) < 0; })[0] || c.steps.filter(function (s) { return isStale(s.id); })[0];
+    if (next) requestCopy(next.id, { course: c.id });
   });
   $('#cShare').addEventListener('click', function () {
     var url = location.origin + location.pathname + '#c-' + state.courseId;
@@ -919,14 +1068,20 @@
     toast('진행 기록을 지웠어요', null, { label: '되돌리기', fn: function () { state.courses[id] = before; store.set('courses', state.courses); renderCourse(); renderCourses(); } });
   });
 
+  // 빈칸 확인
+  $('#cfFill').addEventListener('click', function () { var pd = pending; hideConfirm(); if (pd) fillFirst(pd); });
+  $('#cfBlank').addEventListener('click', function () { var pd = pending; hideConfirm(); if (pd) doCopy(pd.id, pd.o); });
+  $('#cfCancel').addEventListener('click', hideConfirm);
+  $('#confirmScrim').addEventListener('click', hideConfirm);
+
   // 상세
   $('#dCopy').addEventListener('click', function () {
     var btn = this;
-    copyPrompt(state.openId).then(function (ok) {
+    requestCopy(state.openId, { course: state.drawerCourse, after: function (ok) {
       if (!ok) return;
       btn.textContent = '복사했어요'; btn.classList.add('is-done');
       setTimeout(function () { btn.textContent = '프롬프트 복사'; btn.classList.remove('is-done'); }, 1600);
-    });
+    } });
   });
   $('#dShare').addEventListener('click', function () {
     var url = location.origin + location.pathname + '#' + state.openId;
@@ -951,6 +1106,12 @@
     store.set('inputs', state.inputs); renderPreview();
     var exb = $('#dInputs [data-ex="' + k + '"]'); if (exb) exb.hidden = !!val(e.target.value);
   });
+  $('#dDecs').addEventListener('input', function (e) {
+    var k = e.target.dataset.dec; if (!k) return;
+    state.brief[k] = e.target.value; store.set('brief', state.brief);
+    renderPreview(); renderBriefBar();
+    if (isOpen('courseSheet')) renderCourse();
+  });
   $('#dInputs').addEventListener('click', function (e) {
     var b = e.target.closest('[data-ex]'); if (!b) return;
     var k = b.dataset.ex, id = state.openId, t = $('#in-' + id + '-' + k), ex = EX[id + '.' + k];
@@ -963,7 +1124,7 @@
   $('#dBody').addEventListener('click', function (e) {
     if (!e.target.closest('#dEditBrief')) return;
     var p = byId[state.openId];
-    openBrief(p.ctx.filter(function (k) { return !val(state.brief[k]); })[0] || null);
+    openBrief(p.ctx.filter(function (k) { return !ctxByKey[k].optional && !val(state.brief[k]); })[0] || null);
   });
 
   // 브리프
@@ -972,7 +1133,7 @@
   bInput.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); stepNext(); } });
   $('#bNext').addEventListener('click', stepNext);
   $('#bSkip').addEventListener('click', stepNext);
-  $('#bBack').addEventListener('click', function () { if (state.bIdx > 0) showStep(state.bIdx - 1); });
+  $('#bBack').addEventListener('click', function () { var pos = STEP_IDX.indexOf(state.bIdx); if (pos > 0) showStep(STEP_IDX[pos - 1]); });
   $('#bList').addEventListener('click', function (e) { var b = e.target.closest('[data-i]'); if (b) showStep(+b.dataset.i); });
   $('#briefClear').addEventListener('click', function () {
     var before = Object.assign({}, state.brief);
@@ -1005,6 +1166,15 @@
 
   // 키보드
   document.addEventListener('keydown', function (e) {
+    if (!$('#confirm').hidden) {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); hideConfirm(); return; }
+      if (e.key === 'Tab') {
+        var cf = $$('#confirm button'), a = cf[0], z = cf[cf.length - 1];
+        if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); }
+        else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); }
+      }
+      return;
+    }
     if (!stack.length) {
       var tag = (document.activeElement && document.activeElement.tagName) || '';
       if (e.key === '/' && !/INPUT|TEXTAREA/.test(tag)) { e.preventDefault(); openSearch(); }
