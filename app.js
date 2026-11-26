@@ -1391,7 +1391,8 @@
   $('#openSearch').addEventListener('click', openSearch);
   $('#barSearch').addEventListener('click', openSearch);
   $('#openBrief').addEventListener('click', function () { openBrief(); });
-  $('#openLib').addEventListener('click', function () { renderLib(); showSheet($('#libSheet'), true); });
+  // 여는 순간 보이는 탭을 이 방문 기록 칸에 남긴다 (탭을 다시 누르지 않아도 새로고침·뒤로가기 뒤 같은 탭)
+  $('#openLib').addEventListener('click', function () { renderLib(); showSheet($('#libSheet'), true, null, { lib: state.lib }); });
   $('#openFilter').addEventListener('click', openFilter);
   $('#scrim').addEventListener('click', function () { requestClose(); });
   $$('[data-close]').forEach(function (b) { b.addEventListener('click', function () { requestClose(b.closest('.drawer, .search')); }); });
