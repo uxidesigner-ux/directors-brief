@@ -521,7 +521,19 @@
       '<div class="stamp" aria-hidden="true"><div><b>복사</b><small>' + p.id + '</small></div></div></article>';
   }
   var lastCount = null;
+  // 목록에 적용한 필터를 방문 기록 칸에 함께 남긴다. 새로고침·뒤로가기 뒤에도 같은 목록으로 돌아오게 한다.
+  // 같은 탭의 기록에만 남으므로 새 탭에서 연 공유 링크에는 섞이지 않는다
+  function fState() { return { t: Array.from(state.f.types), o: Array.from(state.f.outs) }; }
+  function patchEntry(o) { try { history.replaceState(Object.assign({}, history.state || {}, o), '', location.href); } catch (e) { /* 무시 */ } }
+  function sameF(x) { var c = fState(); return !!x && String(x.t || []) === String(c.t) && String(x.o || []) === String(c.o); }
+  function useF(x) {
+    if (!x || sameF(x)) return false;
+    state.f.types = new Set((x.t || []).filter(function (t) { return DB.types[t]; }));
+    state.f.outs = new Set((x.o || []).filter(function (o) { return DB.outs[o]; }));
+    return true;
+  }
   function renderList(animate) {
+    if (state.view === 'list' && !stack.length && history.state && !history.state.sheet && !sameF(history.state.f)) patchEntry({ f: fState() });
     var f = state.f, list = PROMPTS.filter(function (p) { return hit(p, f); });
     renderHead(animate);
     var cnt = $('#listCount');
@@ -635,12 +647,21 @@
     var t = $('#toast'), a = $('#toastAction');
     $('#toastMsg').innerHTML = esc(msg) + (sub ? '<small>' + esc(sub) + '</small>' : '');
     a.hidden = !action; t.classList.toggle('has-action', !!action);
-    a.onclick = action ? function () { action.fn(); hideToast(); } : null;
+    // 버튼은 알림이 보이는 동안만 유효하다. 숨은 뒤에는 키보드로 닿아도 실행되지 않는다
+    var until = Date.now() + 4000;
+    a.onclick = action ? function () { if (Date.now() > until || a.hidden) { hideToast(); return; } action.fn(); hideToast(); } : null;
     if (action) a.textContent = action.label;
     t.classList.remove('is-show'); void t.offsetWidth; t.classList.add('is-show');
     clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, action ? 4000 : 2400);
   }
-  function hideToast() { $('#toast').classList.remove('is-show', 'has-action'); }
+  function hideToast() {
+    var a = $('#toastAction');
+    $('#toast').classList.remove('is-show', 'has-action');
+    // 숨은 버튼이 키보드 탐색에 남지 않게 한다. 포커스가 그 버튼에 있었다면 본문으로 옮긴다
+    a.onclick = null;
+    if (document.activeElement === a) a.blur();
+    a.hidden = true;
+  }
 
   /* ---------- 복사·보관 ---------- */
   function copyText(text) {
@@ -809,7 +830,7 @@
     // push === 'here': 지금 방문 기록 칸이 이미 이 시트의 칸이다 (앞으로가기로 돌아온 경우)
     el._pushed = !!push;
     // bg: 이 시트 아래 배경 화면(홈 또는 목록). 새로고침·뒤로가기 뒤에 배경을 맞추는 데 쓴다
-    if (push && push !== 'here') history.pushState(Object.assign({ sheet: el.id, bg: state.view === 'list' ? listHash(state.f.p) : '' }, extra || {}), '', url || location.href);
+    if (push && push !== 'here') history.pushState(Object.assign({ sheet: el.id, bg: state.view === 'list' ? listHash(state.f.p) : '' }, state.view === 'list' ? { bgf: fState() } : {}, extra || {}), '', url || location.href);
     focusStack.push(document.activeElement);
     stack.push(el);
     var scrim = $('#scrim');
@@ -886,7 +907,10 @@
   }
   function syncView(st, instant) {
     var v = viewFor(st); if (!v) return;
+    // 이 칸에 남긴 필터(목록 칸은 f, 시트 칸은 열 때의 배경 필터 bgf). 칸에 기록이 없으면(이전 버전 기록) 지금 필터를 그대로 둔다
+    var cur = history.state || st || {}, changed = v.view === 'list' && useF(cur.sheet ? cur.bgf : cur.f);
     if (v.view !== state.view || (v.view === 'list' && v.p !== state.f.p)) go(v.view, { p: v.p, instant: instant !== false });
+    else if (changed) renderList(false);
   }
   var skipPop = false;
   function stripConfirm(st) { st = Object.assign({}, st || {}); delete st.confirm; return st; }
@@ -924,8 +948,8 @@
       else if (w.id === 'drawer') openPrompt(w.prompt, how, w.from);
       else if (w.id === 'briefDrawer') openBrief(null, 'here');
       else if (w.id === 'search') openSearch('here');
-      else if (w.id === 'filterSheet') openFilter('here');
-      else if (w.id === 'libSheet') { renderLib(); showSheet($('#libSheet'), 'here'); }
+      else if (w.id === 'filterSheet') openFilter('here', st && st.sheet === 'filterSheet' ? st.fd : null);
+      else if (w.id === 'libSheet') { if (st && (st.lib === 'fav' || st.lib === 'recent')) state.lib = st.lib; renderLib(); showSheet($('#libSheet'), 'here'); }
     }
     return closed;
   }
@@ -1121,8 +1145,10 @@
   }
 
   /* ---------- 필터 시트 ---------- */
-  function openFilter(push) {
+  function openFilter(push, fd) {
     state.draft = { types: new Set(state.f.types), outs: new Set(state.f.outs) };
+    // 같은 창을 새로고침했다면 적용 전에 고르던 선택을 되살린다 (배경 목록은 '적용' 전까지 그대로)
+    if (fd) state.draft = { types: new Set((fd.t || []).filter(function (t) { return DB.types[t]; })), outs: new Set((fd.o || []).filter(function (o) { return DB.outs[o]; })) };
     renderFilter(); showSheet($('#filterSheet'), push === undefined ? true : push);
   }
   function renderFilter() {
@@ -1147,6 +1173,7 @@
     if (nEl.textContent !== String(total) && !reduced) { nEl.classList.remove('is-tick'); void nEl.offsetWidth; nEl.classList.add('is-tick'); }
     nEl.textContent = total;
     $('#fApply').disabled = total === 0;
+    if (history.state && history.state.sheet === 'filterSheet' && stack[stack.length - 1] === $('#filterSheet')) patchEntry({ fd: { t: Array.from(d.types), o: Array.from(d.outs) } });
   }
 
   /* ---------- 보관함 ---------- */
@@ -1427,7 +1454,11 @@
   });
 
   // 보관함
-  $('#libSheet').addEventListener('click', function (e) { var b = e.target.closest('[data-lib]'); if (b) { state.lib = b.dataset.lib; renderLib(); } });
+  $('#libSheet').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-lib]'); if (!b) return;
+    state.lib = b.dataset.lib; renderLib();
+    if (history.state && history.state.sheet === 'libSheet') patchEntry({ lib: state.lib });
+  });
 
   // 코스
   $('#cNext').addEventListener('click', function () {
@@ -1484,8 +1515,10 @@
     var gen = op.tok;
     liveUndo = { scope: scope, gen: gen };
     myUndo[scope] = gen; setTimeout(function () { purgeUndo(scope, gen); }, 4500);
+    var until = Date.now() + 4000;
     toast(msg, null, { label: '되돌리기', fn: function () {
       liveUndo = null;
+      if (Date.now() > until) return;   // 만료된 되돌리기는 어떤 경로로도 실행하지 않는다
       // 버튼이 보였더라도 누른 순간에 다시 확인한다
       withLock(scope, function () {
         if (genNow(scope) !== gen) { toast('되돌릴 수 없어요', '그 뒤에 다른 탭에서 같은 범위를 다시 초기화했어요.'); return; }
@@ -1725,7 +1758,7 @@
       hs0.dup = 1; history.replaceState(hs0, '', location.href); applyEntry(hs0); skipPop = true; history.back();
     } else applyEntry(hs0);
   }
-  else if (/^#list/.test(location.hash)) { body.classList.remove('is-intro'); route(true); history.replaceState({ view: 'list' }, '', location.href); }
+  else if (/^#list/.test(location.hash)) { body.classList.remove('is-intro'); useF(history.state && history.state.f); route(true); history.replaceState({ view: 'list', f: fState() }, '', location.href); }
   else fromHash();
   window.addEventListener('load', function () {
     body.classList.remove('is-loading'); moveInd(true);
