@@ -1300,7 +1300,7 @@
       $('#dFav').setAttribute('aria-pressed', state.fav.has(p.id));
       var btn = $('#dCopy'); btn.textContent = '프롬프트 복사'; btn.classList.remove('is-done');
       setFold(false, true);
-      $('#dDisc').setAttribute('aria-expanded', 'false'); $('#dDiscPanel').classList.remove('is-open');
+      setDisc(false);
     }
     if (full) { renderDecs(p); renderReuse(p); }
     renderBriefRow(p); syncOpts(); renderPreview();
@@ -1592,10 +1592,14 @@
   });
   $('#dFav').addEventListener('click', function () { toggleFav(state.openId); });
   $('#dFoldBtn').addEventListener('click', function () { setFold(this.getAttribute('aria-expanded') !== 'true'); });
-  $('#dDisc').addEventListener('click', function () {
-    var open = this.getAttribute('aria-expanded') !== 'true';
-    this.setAttribute('aria-expanded', open); $('#dDiscPanel').classList.toggle('is-open', open);
-  });
+  // 접힌 고급 설정은 높이만 0이 아니라 키보드 포커스와 접근성 트리에서도 빠진다 (inert). 숨은 스위치가 복사 원문을 바꾸지 못하게 한다
+  function setDisc(open) {
+    var panel = $('#dDiscPanel');
+    $('#dDisc').setAttribute('aria-expanded', open); panel.classList.toggle('is-open', open);
+    panel.inert = !open; if (open) panel.removeAttribute('aria-hidden'); else panel.setAttribute('aria-hidden', 'true');
+    if (!open && panel.contains(document.activeElement)) $('#dDisc').focus();
+  }
+  $('#dDisc').addEventListener('click', function () { setDisc(this.getAttribute('aria-expanded') !== 'true'); });
   $('#dNext').addEventListener('click', function (e) {
     var b = e.target.closest('[data-next]'); if (!b) return;
     copyText(byId[state.openId].next[+b.dataset.next]).then(function (ok) {
