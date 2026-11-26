@@ -33,11 +33,11 @@
     get: function (ns, key, d) { var k = ns + SEP + key; return k in drafts ? drafts[k] : store.get(k, d); },
     set: function (ns, key, v) {
       var k = ns + SEP + key, ok = store.set(k, v);
-      if (ok) { if (k in drafts) { delete drafts[k]; keepDrafts(); } }
+      if (ok) { if (k in drafts) { delete drafts[k]; keepDrafts(); renderSaveWarn(); } }
       else { drafts[k] = v; keepDrafts(); noteSaveFail(); }
       return ok;
     },
-    del: function (ns, key) { var k = ns + SEP + key; store.del(k); if (k in drafts) { delete drafts[k]; keepDrafts(); } },
+    del: function (ns, key) { var k = ns + SEP + key; store.del(k); if (k in drafts) { delete drafts[k]; keepDrafts(); renderSaveWarn(); } },
     all: function (ns) {
       var out = {}, pre = 'db.' + ns + SEP, dp = ns + SEP;
       try {
@@ -192,7 +192,9 @@
   }
   function downloadBackup() {
     var saved = {};
-    try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && k.indexOf('db.') === 0) saved[k] = localStorage.getItem(k); } } catch (e) { /* 무시 */ }
+    purgeUndo();
+    // 되돌리기용 임시 사본(db.u|)은 업무 데이터가 아니라서 백업에 넣지 않는다. 지운 내용이 파일로 새어 나가지 않게 한다
+    try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && k.indexOf('db.') === 0 && k.indexOf('db.u' + SEP) !== 0) saved[k] = localStorage.getItem(k); } } catch (e) { /* 무시 */ }
     // saved: 이 브라우저에 실제로 저장된 값, current: 지금 이 탭이 쓰는 값(저장하지 못한 초안 포함), unsaved: 저장하지 못한 칸
     pullState();
     var data = { app: 'directors-brief', at: new Date().toISOString(), saved: saved,
@@ -428,7 +430,7 @@
     if (decs.length) L.push('- 확정한 결정의 값(색·수치·경로·요청·일정·가격·링크)이 결과물 곳곳에 바뀌지 않고 같은 값으로 쓰였는가');
     if (decs.indexOf('goal') > -1) L.push('- 문서가 확정한 합의 하나를 요청하는 문장으로 끝나는가');
     if (coreSet) L.push('- 브랜드 코어(핵심 개념·태그라인·모티프)와 어긋나는 결정이 없는가. 바꿔야 한다면(예: 사용자가 이미 알아보는 기존 자산과 부딪힐 때) 본문과 섞지 말고 이유와 함께 따로 제안할 것');
-    if (DB.scoreWhen(p)) L.push(DB.scoreLine);
+    if (DB.scoreWhen(p)) L.push(typeof DB.scoreLine === 'function' ? DB.scoreLine(p) : DB.scoreLine);
     L.push('', '## 사실과 가정');
     L.push('- 프로젝트 맥락에 적힌 사실(수익 모델, 현재 상태, 숫자)은 바꾸거나 다른 가정으로 대신하지 마세요.');
     L.push('- 정보가 부족하면 멈추지 말고 가정하되, 맨 앞에 3개 이내로 모아 적고 본문에서는 [가정]으로 표시하세요.');
@@ -1445,8 +1447,25 @@
   function bumpGen(scope, seen, removed) {
     var tok = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10), now = genNow(scope), data = removed;
     if (now !== seen) { var prev = store.get('u' + SEP + scope, null); if (prev && prev.t === now) data = mergeRemoved(prev.d, removed); }
-    if (!store.set('u' + SEP + scope, { t: tok, d: data })) return null;
+    if (!store.set('u' + SEP + scope, { t: tok, at: Date.now(), d: data })) return null;
     return store.set('g' + SEP + scope, tok) ? { tok: tok, data: data } : null;
+  }
+  // 되돌리기 사본은 동시 초기화를 합치는 짧은 순간에만 필요하다. 되돌리기 버튼(4초)이 끝나면 지우고,
+  // 탭이 닫혀 남은 사본이나 이전 버전이 남긴 사본은 시작할 때·백업할 때 정리한다. 유효한 되돌리기는 사본이 아니라 그 탭의 메모리로 실행된다
+  var UNDO_TTL = 5000, myUndo = {};
+  // 탭을 닫거나 다른 주소로 떠날 때 이 탭이 남긴 사본을 지운다 (되돌리기 버튼도 함께 사라진다)
+  window.addEventListener('pagehide', function () { Object.keys(myUndo).forEach(function (sc) { purgeUndo(sc, myUndo[sc]); }); });
+  function undoAge(u) { var t = u && (u.at || parseInt(String(u.t || '').split('-')[0], 36)); return t ? Date.now() - t : Infinity; }
+  function purgeUndo(scope, tok) {
+    try {
+      var pre = 'db.u' + SEP, ks = [];
+      for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && k.indexOf(pre) === 0) ks.push(k); }
+      ks.forEach(function (k) {
+        var u = null; try { u = JSON.parse(localStorage.getItem(k)); } catch (e) { /* 깨진 값은 지운다 */ }
+        var mine = scope && k === pre + scope && u && u.t === tok;
+        if (mine || undoAge(u) > UNDO_TTL) { localStorage.removeItem(k); if (mine) delete myUndo[scope]; }
+      });
+    } catch (e) { /* 저장소를 못 읽는 환경 */ }
   }
   function mergeRemoved(a, b) {
     var o = {}; [a, b].forEach(function (x) { Object.keys(x || {}).forEach(function (k) {
@@ -1464,12 +1483,13 @@
     if (!op) { liveUndo = null; toast(msg, '저장 공간이 부족해 되돌리기를 기록하지 못했어요.'); return; }
     var gen = op.tok;
     liveUndo = { scope: scope, gen: gen };
+    myUndo[scope] = gen; setTimeout(function () { purgeUndo(scope, gen); }, 4500);
     toast(msg, null, { label: '되돌리기', fn: function () {
       liveUndo = null;
       // 버튼이 보였더라도 누른 순간에 다시 확인한다
       withLock(scope, function () {
         if (genNow(scope) !== gen) { toast('되돌릴 수 없어요', '그 뒤에 다른 탭에서 같은 범위를 다시 초기화했어요.'); return; }
-        fn(op.data);
+        fn(op.data); purgeUndo(scope, gen);
       });
     } });
   }
@@ -1685,6 +1705,7 @@
   });
 
   /* ---------- 시작 ---------- */
+  purgeUndo();
   renderSaveWarn();
   function fromHash() {
     var h = (location.hash || '').replace('#', '');
@@ -1694,12 +1715,17 @@
   }
   renderGoals(); renderCourses(); renderRail(); renderList(false);
   renderBriefBar(); renderLibCount(); renderPrinciples(); renderRuler();
-  if (/^#list/.test(location.hash)) { body.classList.remove('is-intro'); route(true); history.replaceState({ view: 'list' }, '', location.href); }
-  else if (history.state && history.state.sheet) {
-    // 같은 탭에서 새로고침: 이 방문 기록 칸이 뜻하는 화면(부모 코스 포함)을 그대로 다시 쌓는다
-    var hs0 = stripConfirm(history.state); if (history.state.confirm) history.replaceState(hs0, '', location.href);
-    body.classList.remove('is-intro'); syncView(hs0, true); applyEntry(hs0);
+  if (history.state && history.state.sheet) {
+    // 같은 탭에서 새로고침: 이 방문 기록 칸이 뜻하는 화면(배경 목록, 부모 코스, 필터·보관함 포함)을 그대로 다시 쌓는다
+    var hs0 = stripConfirm(history.state), wasConfirm = !!(history.state.confirm || history.state.dup);
+    body.classList.remove('is-intro'); syncView(hs0, true);
+    if (wasConfirm) {
+      // 확인창이 떠 있던 칸: 보류한 복사는 실행하지 않는다. 이 칸은 바로 앞 칸과 같은 화면이므로 별칭 칸으로 표시하고
+      // 조용히 앞 칸으로 돌아간다. 그래야 닫기 한 번에 이전 화면으로 간다
+      hs0.dup = 1; history.replaceState(hs0, '', location.href); applyEntry(hs0); skipPop = true; history.back();
+    } else applyEntry(hs0);
   }
+  else if (/^#list/.test(location.hash)) { body.classList.remove('is-intro'); route(true); history.replaceState({ view: 'list' }, '', location.href); }
   else fromHash();
   window.addEventListener('load', function () {
     body.classList.remove('is-loading'); moveInd(true);
