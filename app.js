@@ -212,6 +212,7 @@
     searches: store.get('searches', []),
     mode: store.get('mode', 'explore'),
     principles: store.get('principles', true),
+    refs: store.get('refs', false),
     f: { p: 'all', types: new Set(), outs: new Set() },
     draft: { types: new Set(), outs: new Set() },
     openId: null, courseId: null, drawerCourse: null, bIdx: 0, lib: 'fav'
@@ -239,7 +240,7 @@
   function pullState() {
     Object.assign(state, readAll());
     state.recent = store.get('recent', []); state.searches = store.get('searches', []);
-    state.mode = store.get('mode', 'explore'); state.principles = store.get('principles', true);
+    state.mode = store.get('mode', 'explore'); state.principles = store.get('principles', true); state.refs = store.get('refs', false);
     keepTyping();
   }
   document.addEventListener('input', function (e) { if (e.target.matches && e.target.matches('textarea, input')) e.target.dataset.dirty = '1'; }, true);
@@ -420,7 +421,12 @@
       DB.principles.forEach(function (x) { if (x.when(p)) L.push('- ' + x.line); });
       if (p.out === 'image') L.push('- ' + DB.imageRule);
     }
-    if (p.out === 'code' && p.p !== 'brand' && ['044', '053', '063', '091'].indexOf(p.id) < 0) L.push('', DB.visualRefs[pickRef(p)]);
+    if (p.out === 'code' && p.p !== 'brand' && ['044', '053', '063', '091'].indexOf(p.id) < 0) {
+      // 다른 업종의 HTML 예시는 고르는 작업(refOpt)에서는 "상세 예시 포함"을 켤 때만 넣는다. 끄면 정돈 기준 문장만 남긴다
+      var ref = DB.visualRefs[pickRef(p)];
+      if (p.refOpt && !state.refs) ref = ref.split('\n```')[0].split('\n').filter(function (l) { return !/^아래 예시는/.test(l); }).join('\n').replace(/\s+$/, '');
+      L.push('', ref);
+    }
     var deliversTable = p.output.some(function (o) { return /점검|감사|판정|진단/.test(o); });
     L.push('', '## 출력 전 자기 검수', '아래 기준은 제출하기 전에 스스로 확인하는 내부 점검입니다. 통과하지 못한 부분은 고친 결과만 내고, 이 내부 점검의 결과는 따로 쓰지 마세요.' +
       (deliversTable ? ' 단, "산출물"에 적힌 점검·판정 결과표는 의뢰인에게 납품하는 결과물이므로 그 형식 그대로 작성하세요.' : '') +
@@ -435,7 +441,8 @@
     L.push('- 프로젝트 맥락에 적힌 사실(수익 모델, 현재 상태, 숫자)은 바꾸거나 다른 가정으로 대신하지 마세요.');
     L.push('- 정보가 부족하면 멈추지 말고 가정하되, 맨 앞에 3개 이내로 모아 적고 본문에서는 [가정]으로 표시하세요.');
     L.push('- 측정하지 않은 효과("3초 안에 이해된다")는 사실이 아니라 목표로 쓰세요. "유일하다"는 비교한 범위 안에서만 주장하세요.');
-    if (p.out !== 'code' && (p.p === 'persuade' || p.p === 'review')) L.push('- 주어진 숫자는 그대로 두지 말고 서로 곱하거나 나눠, 이 과제의 판단에 필요한 지표(매출, 전환, 규모 등)로 계산해 보여 주세요. 계산식을 함께 적고, 가정한 값(수수료율 등)이 들어간 숫자는 [가정]으로 표시해 제목이나 헤드라인에 쓰지 마세요.');
+    if (p.out !== 'code' && p.p === 'persuade') L.push('- 주어진 숫자는 그대로 두지 말고 서로 곱하거나 나눠, 이 과제의 판단에 필요한 지표(매출, 전환, 규모 등)로 계산해 보여 주세요. 계산식을 함께 적고, 가정한 값(수수료율 등)이 들어간 숫자는 [가정]으로 표시해 제목이나 헤드라인에 쓰지 마세요.');
+    if (p.out !== 'code' && p.p === 'review') L.push('- 계산은 수정 여부나 우선순위를 바꾸는 수치만 하세요(예: 기준과 납품값의 차이 50 − 44 = 6px). 판단에 쓰이지 않는 환산(검수 시간·인건비 합계 등)은 넣지 마세요. 가정한 값이 들어간 숫자는 [가정]으로 표시하세요.');
     L.push('답변은 한국어로, 제목과 표를 써서 구조화하세요.');
     return L.join('\n');
   }
@@ -1234,9 +1241,12 @@
   function syncOpts() {
     $$('.seg [data-mode]').forEach(function (b) { b.setAttribute('aria-checked', b.dataset.mode === state.mode); });
     $$('[data-mode-help]').forEach(function (h) { h.textContent = MODE_HELP[state.mode]; });
-    $('#dPrinciples').checked = state.principles; $('#bPrinciples').checked = state.principles;
+    $('#dPrinciples').checked = state.principles; $('#bPrinciples').checked = state.principles; $('#dRefs').checked = state.refs;
     var p = byId[state.openId];
-    if (p) $('#dDiscSum').textContent = (p.x ? MODE_LABEL[state.mode] + ', ' : '') + (state.principles ? '디렉팅 원칙 넣음' : '디렉팅 원칙 뺌');
+    if (p) {
+      $('#dRefsWrap').hidden = !p.refOpt;
+      $('#dDiscSum').textContent = (p.x ? MODE_LABEL[state.mode] + ', ' : '') + (state.principles ? '디렉팅 원칙 넣음' : '디렉팅 원칙 뺌') + (p.refOpt ? (state.refs ? ', 상세 예시 넣음' : ', 상세 예시 뺌') : '');
+    }
     roving();
   }
   function renderPreview() {
@@ -1659,6 +1669,7 @@
   $$('.seg [data-mode]').forEach(function (b) {
     b.addEventListener('click', function () { state.mode = b.dataset.mode; store.set('mode', state.mode); syncOpts(); renderPreview(); });
   });
+  $('#dRefs').addEventListener('change', function () { state.refs = this.checked; store.set('refs', state.refs); syncOpts(); renderPreview(); });
   ['#dPrinciples', '#bPrinciples'].forEach(function (s) {
     $(s).addEventListener('change', function () { state.principles = this.checked; store.set('principles', state.principles); syncOpts(); renderPreview(); });
   });
