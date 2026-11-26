@@ -23,22 +23,45 @@
   };
   var SEP = '|';
   // ns: b 브리프, i 작업 입력(작업|칸), c 코스 단계(코스|작업 → 기록 시각), v 복사 버전(코스:작업 → 원문 지문), f 보관함, cp 복사한 작업, g 초기화 세대
+  /* 저장하지 못한 칸(초안): 이 탭에서 사용자가 마지막으로 쓴 값. 읽을 때는 저장값 위에 겹쳐서
+     미리보기·실제 복사·버전 판정·백업의 현재 값이 모두 같은 값을 쓴다. 빈 문자열도 그대로 지킨다.
+     탭을 새로고침해도 남도록 이 탭의 sessionStorage에도 적어 둔다(별도 공간, 실패해도 메모리에는 남는다). */
+  var drafts = (function () { try { return JSON.parse(sessionStorage.getItem('db.drafts') || '{}') || {}; } catch (e) { return {}; } })();
+  function keepDrafts() { try { if (Object.keys(drafts).length) sessionStorage.setItem('db.drafts', JSON.stringify(drafts)); else sessionStorage.removeItem('db.drafts'); } catch (e) { /* 메모리에는 남는다 */ } }
   var kv = {
     raw: function (ns, key) { return store.raw(ns + SEP + key); },
-    get: function (ns, key, d) { return store.get(ns + SEP + key, d); },
-    set: function (ns, key, v) { var ok = store.set(ns + SEP + key, v); if (!ok) noteSaveFail(); return ok; },
-    del: function (ns, key) { store.del(ns + SEP + key); },
+    get: function (ns, key, d) { var k = ns + SEP + key; return k in drafts ? drafts[k] : store.get(k, d); },
+    set: function (ns, key, v) {
+      var k = ns + SEP + key, ok = store.set(k, v);
+      if (ok) { if (k in drafts) { delete drafts[k]; keepDrafts(); } }
+      else { drafts[k] = v; keepDrafts(); noteSaveFail(); }
+      return ok;
+    },
+    del: function (ns, key) { var k = ns + SEP + key; store.del(k); if (k in drafts) { delete drafts[k]; keepDrafts(); } },
     all: function (ns) {
-      var out = {}, pre = 'db.' + ns + SEP;
+      var out = {}, pre = 'db.' + ns + SEP, dp = ns + SEP;
       try {
         for (var i = 0; i < localStorage.length; i++) {
           var k = localStorage.key(i);
           if (k && k.indexOf(pre) === 0) { try { out[k.slice(pre.length)] = JSON.parse(localStorage.getItem(k)); } catch (e) { /* 깨진 값은 건너뜀 */ } }
         }
       } catch (e) { /* 저장소를 못 읽는 환경 */ }
+      Object.keys(drafts).forEach(function (k) { if (k.indexOf(dp) === 0) out[k.slice(dp.length)] = drafts[k]; });
+      return out;
+    },
+    // 저장값만 (백업의 saved, 되돌리기 판정용)
+    savedAll: function (ns) {
+      var out = {}, pre = 'db.' + ns + SEP;
+      try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && k.indexOf(pre) === 0) { try { out[k.slice(pre.length)] = JSON.parse(localStorage.getItem(k)); } catch (e) { /* 무시 */ } } } } catch (e) { /* 무시 */ }
       return out;
     }
   };
+  // 공간을 돌려받은 뒤 초안을 다시 저장한다. 기록하고 다시 읽어 확인한 칸만 초안에서 뺀다
+  function retryDrafts() {
+    var left = 0;
+    Object.keys(drafts).forEach(function (k) { if (store.set(k, drafts[k])) delete drafts[k]; else left++; });
+    keepDrafts(); return left === 0;
+  }
 
   /* ---------- 이전 저장 형식 옮기기 ----------
      이전 버전은 브리프·입력·코스 기록을 객체 하나로 저장했다. 칸별 키로 옮기되,
@@ -134,14 +157,30 @@
     var out = fn(cur); store.set(kind, out === undefined ? cur : out);
   }
   /* ---------- 저장 실패 알림·백업 ---------- */
-  var saveFailed = false, warnClosed = false;
-  function noteSaveFail() { saveFailed = true; warnClosed = false; renderSaveWarn(); }
+  var warnClosed = false;
+  function noteSaveFail() { warnClosed = false; renderSaveWarn(); }
+  function draftLabel(k) {
+    var p = k.split(SEP), ns = p[0];
+    if (ns === 'b') { var c = DB.ctx.filter(function (x) { return x.k === p[1]; })[0]; return '브리프 · ' + (c ? c.label : p[1]); }
+    if (ns === 'i') {
+      if (/^@reuse:/.test(p[2])) return p[1] + ' 이전 단계 자료 선택';
+      var pp = (window.PROMPTS || []).filter(function (x) { return x.id === p[1]; })[0], il = pp && (pp.in || []).filter(function (x) { return x.k === p[2]; })[0];
+      return p[1] + ' ' + (il ? il.l.replace(/\s*\(.*\)$/, '') : p[2]) + ' (' + String(drafts[k] || '').length.toLocaleString() + '자)';
+    }
+    return { c: '코스 기록', v: '복사 버전', f: '보관함', cp: '복사 기록', g: '되돌리기 기록' }[ns] || k;
+  }
   function renderSaveWarn() {
     var box = document.getElementById('saveWarn'); if (!box) return;
-    var show = (migration.pending || saveFailed) && !warnClosed;
+    var unsaved = Object.keys(drafts);
+    var show = (migration.pending || unsaved.length > 0) && !warnClosed;
     box.hidden = !show; if (!show) return;
     var msg;
-    if (migration.pending) {
+    if (unsaved.length) {
+      var dn = unsaved.map(draftLabel);
+      msg = '저장 공간이 부족해 방금 바꾼 ' + dn.slice(0, 3).join(', ') + (dn.length > 3 ? ' 외 ' + (dn.length - 3) + '개' : '') +
+        '를 이 브라우저에 저장하지 못했어요. 이 탭의 미리보기·복사·백업에는 방금 쓴 내용이 그대로 쓰여요. 공간을 늘린 뒤 "다시 시도"를 누르면 저장돼요.' +
+        (migration.pending ? ' 기존 데이터 이관도 아직 끝나지 않았어요.' : '');
+    } else if (migration.pending) {
       var names = migration.failed.map(function (w) { return w.label; }), more = names.length > 3 ? ' 외 ' + (names.length - 3) + '개' : '';
       msg = '이 브라우저의 저장 공간이 부족해 기존 데이터를 새 저장 방식으로 옮기지 못했어요. 기존 데이터는 지우지 않았고 지금도 그대로 읽고 있어요. 옮기지 못한 항목: ' +
         (names.slice(0, 3).join(', ') || '확인 중') + more + '. 공간을 늘린 뒤 "다시 시도"를 누르거나 백업을 받아 두세요.';
@@ -149,13 +188,16 @@
       msg = '저장 공간이 부족해 방금 바꾼 내용을 이 브라우저에 저장하지 못했어요. 이 탭에서는 계속 쓰이지만 새로고침하거나 닫으면 사라져요. 백업을 받아 두세요.';
     }
     document.getElementById('saveWarnMsg').textContent = msg;
-    document.getElementById('saveRetry').hidden = !migration.pending;
+    document.getElementById('saveRetry').hidden = false;
   }
   function downloadBackup() {
     var saved = {};
     try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && k.indexOf('db.') === 0) saved[k] = localStorage.getItem(k); } } catch (e) { /* 무시 */ }
+    // saved: 이 브라우저에 실제로 저장된 값, current: 지금 이 탭이 쓰는 값(저장하지 못한 초안 포함), unsaved: 저장하지 못한 칸
+    pullState();
     var data = { app: 'directors-brief', at: new Date().toISOString(), saved: saved,
-      current: { brief: state.brief, inputs: state.inputs, courses: state.courses, copyLog: state.copyLog, fav: Array.from(state.fav) } };
+      current: { brief: state.brief, inputs: state.inputs, courses: state.courses, copyLog: state.copyLog, fav: Array.from(state.fav) },
+      unsaved: Object.keys(drafts).map(function (k) { return { key: k, label: draftLabel(k), value: drafts[k] }; }) };
     var url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
     var a = document.createElement('a'); a.href = url; a.download = 'directors-brief-backup-' + new Date().toISOString().slice(0, 10) + '.json';
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
@@ -764,7 +806,8 @@
     if (stack.indexOf(el) > -1) return;
     // push === 'here': 지금 방문 기록 칸이 이미 이 시트의 칸이다 (앞으로가기로 돌아온 경우)
     el._pushed = !!push;
-    if (push && push !== 'here') history.pushState(Object.assign({ sheet: el.id }, extra || {}), '', url || location.href);
+    // bg: 이 시트 아래 배경 화면(홈 또는 목록). 새로고침·뒤로가기 뒤에 배경을 맞추는 데 쓴다
+    if (push && push !== 'here') history.pushState(Object.assign({ sheet: el.id, bg: state.view === 'list' ? listHash(state.f.p) : '' }, extra || {}), '', url || location.href);
     focusStack.push(document.activeElement);
     stack.push(el);
     var scrim = $('#scrim');
@@ -820,17 +863,29 @@
     }
     if (skipPop) { skipPop = false; return; }
     var st = e.state || {};
-    if (st.confirm) {
-      // 앞으로가기로 돌아온 확인창 칸은 만료된 칸이다. 확인창도 보류 복사도 되살리지 않는다.
-      // 그 칸을 원래 화면 칸으로 바꾸고 한 칸 뒤(같은 화면의 원래 칸)로 조용히 돌아가, 같은 화면 칸이 겹치지 않게 한다
-      st = stripConfirm(st); history.replaceState(st, '', location.href);
-      applyEntry(st); skipPop = true; history.back(); return;
+    if (st.confirm || st.dup) {
+      // 만료된 확인창 칸(앞으로가기로 다시 온 칸)은 확인창도 보류 복사도 되살리지 않는다. 이 칸을 바로 앞 칸과 같은 화면의
+      // '별칭 칸'으로 표시하고 한 칸 뒤로 조용히 돌아간다. 앞으로가기를 몇 번 눌러도 별칭 칸에 머물지 않으므로 닫기 한 번이면 된다
+      st = stripConfirm(st); st.dup = 1; history.replaceState(st, '', location.href);
+      applyEntry(st); syncView(st, true); skipPop = true; history.back(); return;
     }
     var closed = applyEntry(st);
-    if (st.sheet || closed || stack.length) return;
-    // iOS 사파리처럼 브라우저가 이미 스와이프 전환을 보여줬다면 다시 움직이지 않는다
-    route(!!e.hasUAVisualTransition);
+    // 시트를 닫고 끝나더라도 배경 화면(홈·목록)을 주소에 맞춘다
+    syncView(st, closed || !!e.hasUAVisualTransition);
   });
+  // 주소와 방문 기록 칸에 맞는 배경 화면. 목록 주소면 그 목적의 목록, 빈 주소면 홈, 시트 주소면 시트를 열던 때의 배경
+  function viewFor(st) {
+    var h = (location.hash || '').replace('#', ''), m = /^list(?:-(\w+))?$/.exec(h);
+    var pOf = function (x) { return x && purposeById[x] ? x : 'all'; };
+    if (m) return { view: 'list', p: pOf(m[1]) };
+    if (!h) return { view: 'home' };
+    if (st && typeof st.bg === 'string') { var mb = /^#?list(?:-(\w+))?$/.exec(st.bg); return mb ? { view: 'list', p: pOf(mb[1]) } : { view: 'home' }; }
+    return null;
+  }
+  function syncView(st, instant) {
+    var v = viewFor(st); if (!v) return;
+    if (v.view !== state.view || (v.view === 'list' && v.p !== state.f.p)) go(v.view, { p: v.p, instant: instant !== false });
+  }
   var skipPop = false;
   function stripConfirm(st) { st = Object.assign({}, st || {}); delete st.confirm; return st; }
   // 방문 기록 칸 하나가 뜻하는 시트 쌓임. 코스에서 연 상세는 그 코스 위에 있다
@@ -1383,40 +1438,67 @@
     copyText(url).then(function (ok) { toast(ok ? '코스 링크를 복사했어요' : '복사하지 못했어요', ok ? '팀원이 열면 같은 순서로 따라올 수 있어요.' : url); });
   });
   // 전체 초기화마다 범위별 세대를 올린다. 되돌리기는 내 초기화 뒤에 같은 범위의 초기화가 또 없었을 때만 실행된다
-  function bumpGen(scope) { var g = (+kv.get('g', scope, 0) || 0) + 1; kv.set('g', scope, g); return g; }
-  function genNow(scope) { return +kv.get('g', scope, 0) || 0; }
+  // 초기화마다 고유 표식을 범위 키에 기록한다. 같은 순간 두 탭이 초기화해도 마지막에 저장된 표식 하나만 남으므로
+  // 되돌리기는 그 한 작업만 유효하다. 표식 저장에 실패하면 되돌리기를 제공하지 않는다. 예전 숫자 세대도 그대로 읽는다
+  // seen: 이 초기화를 시작할 때 보였던 표식. 그 사이 표식이 바뀌었다면 같은 순간의 다른 탭 초기화이므로
+  // 그 탭이 지운 내용까지 합쳐 기록한다. 그래야 마지막에 남는 하나의 되돌리기가 두 탭이 지운 것을 모두 되살린다
+  function bumpGen(scope, seen, removed) {
+    var tok = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10), now = genNow(scope), data = removed;
+    if (now !== seen) { var prev = store.get('u' + SEP + scope, null); if (prev && prev.t === now) data = mergeRemoved(prev.d, removed); }
+    if (!store.set('u' + SEP + scope, { t: tok, d: data })) return null;
+    return store.set('g' + SEP + scope, tok) ? { tok: tok, data: data } : null;
+  }
+  function mergeRemoved(a, b) {
+    var o = {}; [a, b].forEach(function (x) { Object.keys(x || {}).forEach(function (k) {
+      var v = x[k]; o[k] = (v && typeof v === 'object' && !Array.isArray(v)) ? Object.assign({}, o[k] || {}, v) : (k in o ? o[k] : v); }); });
+    return o;
+  }
+  function genNow(scope) { var v = store.get('g' + SEP + scope, 0); return v == null ? '' : String(v); }
+  // 같은 범위의 초기화·되돌리기는 탭 사이에서 한 번에 하나씩만 실행한다(Web Locks). 지원하지 않는 브라우저는 바로 실행하고 위 표식 비교로 막는다
+  function withLock(scope, fn) {
+    if (navigator.locks && navigator.locks.request) navigator.locks.request('db-reset:' + scope, function () { fn(); }).catch(function () { fn(); });
+    else fn();
+  }
   var liveUndo = null;
-  function undoToast(msg, scope, gen, fn) {
+  function undoToast(msg, scope, op, fn) {
+    if (!op) { liveUndo = null; toast(msg, '저장 공간이 부족해 되돌리기를 기록하지 못했어요.'); return; }
+    var gen = op.tok;
     liveUndo = { scope: scope, gen: gen };
     toast(msg, null, { label: '되돌리기', fn: function () {
       liveUndo = null;
       // 버튼이 보였더라도 누른 순간에 다시 확인한다
-      if (genNow(scope) !== gen) { toast('되돌릴 수 없어요', '그 뒤에 다른 탭에서 같은 범위를 다시 초기화했어요.'); return; }
-      fn();
+      withLock(scope, function () {
+        if (genNow(scope) !== gen) { toast('되돌릴 수 없어요', '그 뒤에 다른 탭에서 같은 범위를 다시 초기화했어요.'); return; }
+        fn(op.data);
+      });
     } });
   }
-  $('#cReset').addEventListener('click', function () {
-    var id = state.courseId, scope = 'course:' + id, removed = { c: {}, v: {} }, cur = readAll(), cc = kv.all('c');
+  $('#cReset').addEventListener('click', function () { var cid = state.courseId; withLock('course:' + cid, function () { resetCourse(cid); }); });
+  function resetCourse(id) {
+    var scope = 'course:' + id, seen = genNow(scope), removed = { c: {}, v: {} }, cur = readAll(), cc = kv.all('c');
     (cur.courses[id] || []).forEach(function (step, n) { var k = id + SEP + step; removed.c[k] = cc[k] != null ? cc[k] : n + 1; kv.del('c', k); });
     Object.keys(cur.copyLog).forEach(function (k) { if (k.indexOf(id + ':') === 0) { removed.v[k] = cur.copyLog[k]; kv.del('v', k); } });
     legacyDrop('courses', function (c) { delete c[id]; });
     legacyDrop('copylog2', function (l) { Object.keys(l).forEach(function (k) { if (k.indexOf(id + ':') === 0) delete l[k]; }); });
-    var gen = bumpGen(scope);
+    // 실제로 지운 것이 없으면(다른 탭이 방금 먼저 지움) 표식을 바꾸지 않는다. 그래야 실제로 지운 탭의 되돌리기가 유효하게 남는다
+    if (!Object.keys(removed.c).length && !Object.keys(removed.v).length) { pullState(); renderCourse(); renderCourses(); toast('지울 진행 기록이 없어요', '다른 탭에서 이미 지웠다면 그 탭에서 되돌릴 수 있어요.'); return; }
+    var op = bumpGen(scope, seen, removed);
     pullState(); renderCourse(); renderCourses();
-    undoToast('진행 기록을 지웠어요', scope, gen, function () {
+    undoToast('진행 기록을 지웠어요', scope, op, function (removed) {
       // 내가 지운 단계만 되살린다. 그 사이 다른 탭이 같은 단계를 다시 복사했다면 그 기록이 더 새것이라 그대로 둔다
-      Object.keys(removed.c).forEach(function (k) { if (kv.raw('c', k) == null) kv.set('c', k, removed.c[k]); });
-      Object.keys(removed.v).forEach(function (k) { if (kv.raw('v', k) == null) kv.set('v', k, removed.v[k]); });
+      Object.keys(removed.c || {}).forEach(function (k) { if (kv.raw('c', k) == null) kv.set('c', k, removed.c[k]); });
+      Object.keys(removed.v || {}).forEach(function (k) { if (kv.raw('v', k) == null) kv.set('v', k, removed.v[k]); });
       pullState(); renderCourse(); renderCourses();
     });
-  });
+  }
 
   // 저장 공간 알림
   $('#saveRetry').addEventListener('click', function () {
-    if (absorbLegacy()) {
-      pullState(); renderBriefBar(); renderCourses(); renderLibCount(); if (isOpen('courseSheet')) renderCourse(); if (state.openId && isOpen('drawer')) renderDrawer(true);
-      toast('기존 데이터를 옮겼어요', '이제 새 저장 방식으로 저장돼요.');
-    } else toast('아직 공간이 부족해요', '기존 데이터는 그대로 있어요.');
+    // 순서: 저장하지 못한 초안을 먼저 저장하고(가장 최근 입력), 그다음 이관을 다시 시도한다
+    var a = retryDrafts(), b = absorbLegacy();
+    pullState(); renderBriefBar(); renderCourses(); renderLibCount(); if (isOpen('courseSheet')) renderCourse(); if (state.openId && isOpen('drawer')) { syncFields(); renderPreview(); }
+    if (a && b) toast('저장했어요', '이제 새로고침하거나 다른 탭에서 열어도 그대로예요.');
+    else toast('아직 공간이 부족해요', '저장하지 못한 내용은 이 탭과 백업에 그대로 있어요.');
     renderSaveWarn();
   });
   $('#saveBackup').addEventListener('click', downloadBackup);
@@ -1505,19 +1587,21 @@
   $('#bSkip').addEventListener('click', stepNext);
   $('#bBack').addEventListener('click', function () { var pos = STEP_IDX.indexOf(state.bIdx); if (pos > 0) showStep(STEP_IDX[pos - 1]); });
   $('#bList').addEventListener('click', function (e) { var b = e.target.closest('[data-i]'); if (b) showStep(+b.dataset.i); });
-  $('#briefClear').addEventListener('click', function () {
-    var removed = readAll().brief;
+  $('#briefClear').addEventListener('click', function () { withLock('brief', clearBrief); });
+  function clearBrief() {
+    var seen = genNow('brief'), removed = readAll().brief;
     Object.keys(removed).forEach(function (k) { kv.del('b', k); });
     legacyDrop('brief', function () { return {}; });
-    var gen = bumpGen('brief');
+    if (!Object.keys(removed).length) { pullState(); showSum(); renderBriefBar(); toast('비울 브리프가 없어요', '다른 탭에서 이미 비웠다면 그 탭에서 되돌릴 수 있어요.'); return; }
+    var op = bumpGen('brief', seen, removed);
     pullState(); showSum(); renderBriefBar();
-    undoToast('브리프를 비웠어요', 'brief', gen, function () {
+    undoToast('브리프를 비웠어요', 'brief', op, function (removed) {
       // 지운 뒤 아무도 다시 적지 않은 칸만 되살린다. 그 사이 다른 탭(또는 이 탭)에서 새로 적은 칸은 그 값이 우선이다
       Object.keys(removed).forEach(function (k) { if (kv.raw('b', k) == null) kv.set('b', k, removed[k]); });
       pullState(); showSum(); renderBriefBar();
       if (state.openId && isOpen('drawer')) renderDrawer(true);
     });
-  });
+  }
   $$('.seg [data-mode]').forEach(function (b) {
     b.addEventListener('click', function () { state.mode = b.dataset.mode; store.set('mode', state.mode); syncOpts(); renderPreview(); });
   });
@@ -1614,7 +1698,7 @@
   else if (history.state && history.state.sheet) {
     // 같은 탭에서 새로고침: 이 방문 기록 칸이 뜻하는 화면(부모 코스 포함)을 그대로 다시 쌓는다
     var hs0 = stripConfirm(history.state); if (history.state.confirm) history.replaceState(hs0, '', location.href);
-    applyEntry(hs0);
+    body.classList.remove('is-intro'); syncView(hs0, true); applyEntry(hs0);
   }
   else fromHash();
   window.addEventListener('load', function () {
